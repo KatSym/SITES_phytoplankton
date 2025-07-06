@@ -42,8 +42,8 @@ edat <- erk.dat %>%
 ptm <- proc.time()
 m1.e <- brm(bf(count ~ Treatment * ExpDay +
                  (ExpDay|mesocosm) +
-                 offset(vol.offset)),
-            family = "negbinomial",
+                 offset(log(vol.offset))),
+            family = poisson(),
             chains = 4,
             iter = 4000,
             cores = 4,
@@ -56,7 +56,7 @@ m1.e <- brm(bf(count ~ Treatment * ExpDay +
             ) 
 proc.time() - ptm
 summary(m1.e)
-
+pp_check(m1.e, ndraws = 100)
 plot(conditional_effects(m1.e, effects = "ExpDay:Treatment"), points = TRUE)
 
 ptm <- proc.time()
