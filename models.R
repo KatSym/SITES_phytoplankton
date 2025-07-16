@@ -4,6 +4,7 @@ library(tidybayes)
 library(modelr)
 
 # load data
+# --- Erken ---
 load("./data/sites_FC_phyto.RData")
 functional.erk <- read.csv("./data/Erken_functional.csv", header = T, sep = ",")
 
@@ -14,6 +15,7 @@ edat <- erk.dat %>%
          ) %>% 
   mutate(Treatment = droplevels(Treatment),
          vol.offset = volume_run*concfactor,
+         label = ifelse(label == "ConSta000_2647648", "ZygSta000_2647648", label),
          .keep = "unused") %>%
   group_by(ExpDay, Treatment, mesocosm, Name, label) %>%
   summarise(count = n(),
@@ -38,10 +40,39 @@ edat <- erk.dat %>%
   summarise(count = sum(count),
             biovol = sum(mean_biovol),
             vol.offset = mean(vol.offset)) %>% 
-  mutate(gr_biovol = count*biovol)
+  mutate(gr_biovol = count*biovol/vol.offset) |> 
+  ungroup()
 
 
-
+edat.tr <- erk.dat %>% 
+  # drop the lake
+  filter(Treatment != "ERK",
+         ProbabilityScore > 0.5
+  ) %>% 
+  mutate(Treatment = droplevels(Treatment),
+         vol.offset = volume_run*concfactor,
+         .keep = "unused") %>%
+  group_by(ExpDay, Treatment, mesocosm, Name, label) %>%
+  summarise(count = n(),
+            mean_abd = mean(AbdDiameter),
+            mean_len = mean(Length),
+            mean_biovol = mean(biovolMS),
+            mean_sa = mean(surfacearea),
+            mean_prob = mean(ProbabilityScore),
+            vol.offset = mean(vol.offset)
+  ) %>% 
+  
+  left_join(., functional.erk, by = join_by(label == Code)) %>%
+  mutate(class = substr(label, 1, 3),
+         label = ifelse(label == "ConSta000_2647648", "ZygSta000_2647648", label),
+         fun_grp = case_when(label == "FILAMENTS" ~ "III",
+                             label == "CyaPla000_3218374" ~ "III",
+                             class == "Bac" ~ "VI",
+                             .default = KRUK_MBFG)) %>% 
+  select(-taxon, -KRUK_MBFG, -Name) %>% 
+  
+  drop_na()  %>% 
+  full_join(., sp_trt, by = join_by(label == Code))
  
 
 ptm <- proc.time()
@@ -100,14 +131,33 @@ fil.cols <- c(`C`= "#00000030", #black - C
               `E`= "#e8485530") 
   
 
-edat.pred <- edat %>% 
-  data_grid(expand_grid(Treatment = c("C", "D", "I", "E"),
-              fun_grp = c("I", "II", "III", "IV", "V", "VI", "VII"), 
-              ExpDay = c(0, 4, 12, 20, 28, 36),
-              vol.offset = 1)) %>% 
+
+m2e.pred <- edat |> 
+  data_grid(Treatment = unique(edat$Treatment),
+            fun_grp = unique(edat$fun_grp),
+            ExpDay = unique(edat$ExpDay),
+            vol.offset = 1) |> 
   add_epred_draws(m2.e, re_formula = NA) 
 
-(plot <- edat.pred %>%
+
+m2e.pred|> 
+  compare_levels(.epred, by = Treatment,
+                 comparison = pairwise) |> 
+  mean_qi() |> 
+
+  ggplot(aes(x = .epred, y = Treatment)) +
+  stat_pointinterval(point_interval = "mean_hdi",
+                     .width =  0.95, linewidth  = .4, 
+                     # interval_colour = ExpDay, 
+                     # point_color = ExpDay
+  ) +
+  geom_vline(xintercept = 0, linetype = "longdash") +
+  facet_wrap(~ fun_grp, scales = "free")+
+  ylab("contrast") +
+  xlab("difference") +
+  theme_minimal()
+
+(plot <- m2e.pred %>%
   ggplot(aes(x = ExpDay,
              y = .epred,
              colour = Treatment)
@@ -153,8 +203,7 @@ m3.e <- brm(bf(gr_biovol ~ Treatment + ExpDay + fun_grp +
                  Treatment : ExpDay +
                  ExpDay : fun_grp +
                  fun_grp : Treatment +
-                 (ExpDay|mesocosm) +
-                 offset(log(vol.offset))),
+                 (ExpDay|mesocosm)),
             family = lognormal(),
             chains = 4,
             iter = 4000,
@@ -169,3 +218,241 @@ m3.e <- brm(bf(gr_biovol ~ Treatment + ExpDay + fun_grp +
 proc.time() - ptm
 pp_check(m3.e, ndraws = 100) + scale_x_log10()
 summary(m3.e)
+
+
+m3e.pred <- edat |> data_grid(Treatment = unique(edat$Treatment),
+                              fun_grp = unique(edat$fun_grp),
+                              ExpDay = unique(edat$ExpDay)
+) |> 
+  add_epred_draws(m3.e, re_formula = NA)  
+
+
+m3e.pred|> 
+  compare_levels(.epred, by = Treatment,
+                 comparison = pairwise) |> 
+  mean_qi() |> 
+  # filter(ExpDay == 12) |> 
+  ggplot(aes(x = .epred, y = Treatment)) +
+  stat_pointinterval(point_interval = "mean_hdi",
+                     .width =  0.95, linewidth  = .4, 
+                     # interval_colour = ExpDay, 
+                     # point_color = ExpDay
+  ) +
+  geom_vline(xintercept = 0, linetype = "longdash") +
+  facet_wrap(~ fun_grp, scales = "free")+
+  ylab("contrast") +
+  xlab("difference") +
+  theme_minimal()
+  
+
+(plot <- m3e.pred %>%
+    ggplot(aes(x = ExpDay,
+               y = .epred,
+               colour = Treatment)
+    ) +
+    stat_lineribbon(aes(y = (.epred),
+                        fill = Treatment),
+                    .width = c(0.95)
+                    # alpha = .3
+                    # position = position_dodge(.5),
+                    # linewidth = 2
+    )+
+    geom_point(edat, mapping = aes(x = ExpDay,
+                                   y = gr_biovol,
+                                   colour = Treatment),
+               alpha = .35,
+               position = position_jitterdodge(dodge.width = .5),
+    ) +
+    facet_wrap(~ fun_grp
+               , scales = "free_y"
+    )+
+    scale_color_manual(values = trt.cols) +
+    scale_fill_manual(values = fil.cols) )
+labs(title = "Heterotroph",
+     y = "<span style='font-size: 15pt'>Abundance </span>
+         <span style='font-size: 13pt'>Log(x+1) cells mL\u207b\u00b9</span>",
+     x = NULL)
+
+
+
+
+# --- Bolmen ----
+ptm <- proc.time()
+m1.b <- brm(bf(count ~ Treatment + ExpDay + fun_grp +
+                 Treatment : ExpDay +
+                 ExpDay : fun_grp +
+                 fun_grp : Treatment +
+                 (ExpDay|mesocosm) +
+                 offset(log(vol.offset))),
+            family = negbinomial(),
+            chains = 4,
+            iter = 4000,
+            cores = 4,
+            control = list(adapt_delta = 0.95),
+            seed = 543,
+            backend = "cmdstanr", 
+            data = bolmen.f,
+            file = "models/Bol_FunctGrp-count-offset_20250716.m",
+            file_refit = "on_change"
+) 
+proc.time() - ptm
+
+pp_check(m1.b, ndraws = 100) + scale_x_log10()
+summary(m1.b)
+
+
+m1b.pred <- bolmen.f |> 
+  data_grid(Treatment = unique(edat$Treatment),
+            fun_grp = unique(edat$fun_grp),
+            ExpDay = unique(edat$ExpDay),
+            vol.offset = 1
+  ) |> 
+  add_epred_draws(m1.b, re_formula = NA) 
+
+
+m1b.pred |> 
+  compare_levels(.epred, by = Treatment,
+                 comparison = pairwise) |> 
+  # filter(ExpDay == 12) |> 
+  mean_qi() |> 
+  ggplot(aes(x = .epred, y = Treatment)) +
+  stat_pointinterval(point_interval = "mean_hdi",
+                     .width =  0.95, linewidth  = .4, 
+                     # interval_colour = ExpDay, 
+                     # point_color = ExpDay
+  ) +
+  geom_vline(xintercept = 0, linetype = "longdash") +
+  facet_wrap(~ fun_grp, scales = "free")+
+  ylab("contrast") +
+  xlab("difference") +
+  theme_minimal()
+
+(plot <- m1b.pred %>%
+    ggplot(aes(x = ExpDay,
+               y = .epred,
+               colour = Treatment)
+    ) +
+    stat_lineribbon(aes(y = (.epred),
+                        fill = Treatment),
+                    .width = c(0.95)
+                    # alpha = .3
+                    # position = position_dodge(.5),
+                    # linewidth = 2
+    )+
+    geom_point(bolmen.f, mapping = aes(x = ExpDay,
+                                   y = count/vol.offset,
+                                   colour = Treatment),
+               alpha = .35,
+               position = position_jitterdodge(dodge.width = .5),
+    ) +
+    facet_wrap(~ fun_grp
+               , scales = "free_y"
+    )+
+    scale_color_manual(values = trt.cols) +
+    scale_fill_manual(values = fil.cols) )
+labs(title = "Heterotroph",
+     y = "<span style='font-size: 15pt'>Abundance </span>
+         <span style='font-size: 13pt'>Log(x+1) cells mL\u207b\u00b9</span>",
+     x = NULL)
+
+
+ptm <- proc.time()
+m2.b <- brm(bf(gr_biovol ~ Treatment + ExpDay + fun_grp +
+                 Treatment : ExpDay +
+                 ExpDay : fun_grp +
+                 fun_grp : Treatment +
+                 (ExpDay|mesocosm) ),
+            family = lognormal(),
+            chains = 4,
+            iter = 4000,
+            cores = 4,
+            control = list(adapt_delta = 0.95),
+            seed = 543,
+            backend = "cmdstanr", 
+            data = bolmen.f,
+            file = "models/Bol_FunctGrp-biov-offset_20250716.m",
+            # file_refit = "on_change"
+) 
+proc.time() - ptm
+
+pp_check(m2.b, ndraws = 100) + scale_x_log10()
+summary(m2.b)
+
+m2b.pred <- bolmen.f |> 
+  data_grid(Treatment = unique(edat$Treatment),
+            fun_grp = unique(edat$fun_grp),
+            ExpDay = unique(edat$ExpDay)
+  ) |> 
+  add_epred_draws(m2.b, re_formula = NA) 
+
+
+m2b.pred |> 
+  compare_levels(.epred, by = Treatment,
+                 comparison = pairwise) |> 
+  # filter(ExpDay == 12) |> 
+  mean_qi() |> 
+  ggplot(aes(x = .epred, y = Treatment)) +
+  stat_pointinterval(point_interval = "mean_hdi",
+                     .width =  0.95, linewidth  = .4, 
+                     # interval_colour = ExpDay, 
+                     # point_color = ExpDay
+  ) +
+  geom_vline(xintercept = 0, linetype = "longdash") +
+  facet_wrap(~ fun_grp, scales = "free")+
+  ylab("contrast") +
+  xlab("difference") +
+  theme_minimal()
+
+
+(plot <- m2b.pred %>%
+    ggplot(aes(x = ExpDay,
+               y = .epred,
+               colour = Treatment)
+    ) +
+    stat_lineribbon(aes(y = (.epred),
+                        fill = Treatment),
+                    .width = c(0.95)
+                    # alpha = .3
+                    # position = position_dodge(.5),
+                    # linewidth = 2
+    )+
+    geom_point(bolmen.f, mapping = aes(x = ExpDay,
+                                       y = gr_biovol,
+                                       colour = Treatment),
+               alpha = .35,
+               position = position_jitterdodge(dodge.width = .5),
+    ) +
+    facet_wrap(~ fun_grp
+               , scales = "free_y"
+    )+
+    scale_color_manual(values = trt.cols) +
+    scale_fill_manual(values = fil.cols) )
+labs(title = "Heterotroph",
+     y = "<span style='font-size: 15pt'>Abundance </span>
+         <span style='font-size: 13pt'>Log(x+1) cells mL\u207b\u00b9</span>",
+     x = NULL)
+
+# traits models ----
+
+ptm <- proc.time()
+m2tr.e <- brm(bf(count ~ Treatment + ExpDay + Paff + Iaff + mu +
+                 Treatment : ExpDay +
+                   Paff : Treatment +
+                   Iaff : Treatment +
+                   mu : Treatment +
+                 (ExpDay|mesocosm) +
+                 offset(log(vol.offset))),
+            family = negbinomial(),
+            chains = 4,
+            iter = 4000,
+            cores = 4,
+            control = list(adapt_delta = 0.95),
+            seed = 543,
+            backend = "cmdstanr", 
+            data = edat.tr,
+            file = "models/Erk_traits-count-offset_20250710.m",
+            file_refit = "on_change"
+) 
+proc.time() - ptm
+pp_check(m2tr.e, ndraws = 100) + scale_x_log10()
+summary(m2tr.e)
