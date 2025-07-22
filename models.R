@@ -7,6 +7,7 @@ library(modelr)
 # --- Erken ---
 load("./data/sites_FC_phyto.RData")
 functional.erk <- read.csv("./data/Erken_functional.csv", header = T, sep = ",")
+species_traits <- read.csv("./data/species_traits.csv", header = T, sep = ",")
 
 edat <- erk.dat %>% 
   # drop the lake
@@ -52,6 +53,7 @@ edat.tr <- erk.dat %>%
   ) %>% 
   mutate(Treatment = droplevels(Treatment),
          vol.offset = volume_run*concfactor,
+         label = ifelse(label == "ConSta000_2647648", "ZygSta000_2647648", label),
          .keep = "unused") %>%
   group_by(ExpDay, Treatment, mesocosm, Name, label) %>%
   summarise(count = n(),
@@ -486,7 +488,10 @@ labs(title = "Heterotroph",
 # traits models ----
 
 etr <- edat.tr |> 
-  select(ExpDay, Treatment, mesocosm, label, vol.offset, count, mean_cellvol,  Paff, Iaff, mu) |> 
+  select(ExpDay, Treatment, mesocosm, label, vol.offset, count,
+         mean_cellvol,  Paff, Iaff, mu) |> 
+  filter(!label %in% c("Amoebida_761", "Cil_other", "Ciliate_0000000", "Multispecies", 
+                       "OTHER", "Heliozoa_0000000", "ProCol000_1001946", "ROTIFERA"))
   mutate(biovol = mean_cellvol*count/vol.offset,
          ExpDay = as.factor(ExpDay),
          Paff = scale(Paff),
