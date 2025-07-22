@@ -110,26 +110,25 @@ unique(edat_tot[,1:3])  %>%
   #theme(legend.position = "none") +
   facet_wrap(vars(Treatment))
 
+
 library(emmeans)
-library(modelbased)
 
 
-contrasts = estimate_contrasts(
-  mtot,
-  contrast = "Treatment",
-  by = "ExpDay",
-  method = "trt.vs.ctrl",
-  length = 50,
-  backend = "emmeans"
-)
-# Add Contrast column by concatenating
-contrasts$Contrast = paste(contrasts$Level1, "-", contrasts$Level2)
-
-ggplot(contrasts, aes(x = ExpDay, y = Difference, )) +
-  # Add line and CI band
-  geom_line(aes(color = Contrast)) +
-  geom_ribbon(aes(ymin = CI_low, ymax = CI_high, fill = Contrast), alpha = 0.2) +
-  # Add line at 0, indicating no difference
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  # Colors
-  theme_light()
+mtot %>% emmeans("Treatment", by = "ExpDay",
+                  at = list(ExpDay = c(0,4,12,20,28,36))) %>% 
+  contrast(method = "trt.vs.ctrl") %>%
+  gather_emmeans_draws() %>% 
+  ggplot(aes(x = ExpDay, y = .value, fill = contrast)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey") +
+  stat_lineribbon(aes(y = .value), .width = c(0.95), #alpha = .5,
+                  point_interval = "mean_qi",
+                  linewidth = .25) + 
+  scale_fill_manual(values = c(#"#00000030",
+                               "#0a875430",
+                               "#4472ca30",
+                               "#e8485530")) +
+  scale_x_continuous(breaks = c(0,4,12,20,28,36)) +
+  ylab("Difference") +
+  xlab("Experimental Day") +
+  theme_light() +
+  facet_wrap(vars(contrast))
