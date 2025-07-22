@@ -10,7 +10,7 @@ load("./data/sites_FC_phyto.RData")
 functional.erk <- read.csv("./data/Erken_functional.csv", header = T, sep = ",")
 species_traits <- read.csv("./data/species_traits.csv", header = T, sep = ",")
 
-
+# taxon level data
 edat_tax <- erk.dat %>% 
   filter(# drop the lake
          Treatment != "ERK",
@@ -43,7 +43,7 @@ edat_tax <- erk.dat %>%
   mutate(taxonvol = count*cellvol) 
 
 
-
+# community level data
 edat_tot = edat_tax %>% 
   group_by(ExpDay, Treatment, mesocosm) %>% 
   summarise(count = sum(count),
@@ -51,11 +51,11 @@ edat_tot = edat_tax %>%
             vol.offset = mean(vol.offset)) %>% 
   mutate(dens = count/vol.offset,
          voldens = biovol/vol.offset # cubic micro per mL
-         ) |> 
+         ) %>% 
   ungroup()
 
 
-
+# group level data
 edat_fgroup = edat_tax %>% 
   group_by(ExpDay, Treatment, mesocosm, fun_grp) %>% 
   summarise(count = sum(count),
@@ -63,7 +63,7 @@ edat_fgroup = edat_tax %>%
             vol.offset = mean(vol.offset)) %>% 
   mutate(dens = count/vol.offset,
          voldens = biovol/vol.offset,
-         ExpDay = as.factor(ExpDay)) |> 
+         ExpDay = as.factor(ExpDay)) %>% 
   ungroup()
 
 
@@ -90,7 +90,7 @@ plot(conditional_effects(mtot, effects = "ExpDay:Treatment",
                          re_formula = NULL), points = T)
 
 
-unique(edat[,1:3])  %>% 
+unique(edat_tot[,1:3])  %>% 
   add_epred_draws(mtot, re_formula = NULL) %>%
   ggplot(aes(x = ExpDay, y = log(voldens), fill = Treatment)) +
   stat_lineribbon(aes(y = .epred), .width = c(0.95), #alpha = .5,
@@ -103,8 +103,33 @@ unique(edat[,1:3])  %>%
                                "#0a875430",
                                "#4472ca30",
                                "#e8485530")) +
+  scale_x_continuous(breaks = c(0,4,12,20,28,36)) +
   ylab(expression(log(mu*m^3/mL))) +
   xlab("Experimental Day") +
   theme_light() +
   #theme(legend.position = "none") +
   facet_wrap(vars(Treatment))
+
+library(emmeans)
+library(modelbased)
+
+
+contrasts = estimate_contrasts(
+  mtot,
+  contrast = "Treatment",
+  by = "ExpDay",
+  method = "trt.vs.ctrl",
+  length = 50,
+  backend = "emmeans"
+)
+# Add Contrast column by concatenating
+contrasts$Contrast = paste(contrasts$Level1, "-", contrasts$Level2)
+
+ggplot(contrasts, aes(x = ExpDay, y = Difference, )) +
+  # Add line and CI band
+  geom_line(aes(color = Contrast)) +
+  geom_ribbon(aes(ymin = CI_low, ymax = CI_high, fill = Contrast), alpha = 0.2) +
+  # Add line at 0, indicating no difference
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  # Colors
+  theme_light()
