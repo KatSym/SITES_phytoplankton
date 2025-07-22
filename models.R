@@ -73,7 +73,8 @@ edat.tr <- erk.dat %>%
   
   drop_na()  %>% 
   full_join(., sp_trt, by = join_by(label == Code))
- 
+
+scale(edat.tr[,15:17])
 
 ptm <- proc.time()
 m1.e <- brm(bf(count ~ Treatment * ExpDay +
@@ -404,6 +405,44 @@ m2b.pred |>
   theme_minimal()
 
 
+m2.b1 <- brm(bf(gr_biovol ~ Treatment + fun_grp +
+                 fun_grp : Treatment +
+                 (ExpDay|mesocosm) ),
+            family = lognormal(),
+            chains = 4,
+            iter = 4000,
+            cores = 4,
+            control = list(adapt_delta = 0.95),
+            seed = 543,
+            backend = "cmdstanr", 
+            data = bolmen.f,
+            file = "models/Bol_FunctGrp-biov-only_20250716.m",
+            # file_refit = "on_change"
+) 
+pp_check(m2.b1, ndraws = 100) + scale_x_log10()
+summary(m2.b1)
+
+bolmen.f |> 
+  data_grid(Treatment = unique(edat$Treatment),
+            fun_grp = unique(edat$fun_grp)) |> 
+  add_epred_draws(m2.b1, re_formula = NA) |> 
+
+  compare_levels(.epred, by = Treatment,
+                 comparison = pairwise) |> 
+  # filter(ExpDay == 12) |> 
+  mean_qi() |> 
+  ggplot(aes(x = .epred, y = Treatment)) +
+  stat_pointinterval(point_interval = "mean_hdi",
+                     .width =  0.90, linewidth  = .4, 
+                     # interval_colour = ExpDay, 
+                     # point_color = ExpDay
+  ) +
+  geom_vline(xintercept = 0, linetype = "longdash") +
+  facet_wrap(~ fun_grp, scales = "free")+
+  ylab("contrast") +
+  xlab("difference") 
+
+
 (plot <- m2b.pred %>%
     ggplot(aes(x = ExpDay,
                y = .epred,
@@ -434,6 +473,14 @@ labs(title = "Heterotroph",
 
 # traits models ----
 
+etr <- edat.tr |> 
+  select(ExpDay, Treatment, mesocosm, vol.offset, count, mean_biovol,  fun_grp, Paff, Iaff, mu) |> 
+  mutate(biovol = mean_biovol*count/vol.offset,
+         Paff = scale(Paff),
+         Iaff = scale(Iaff),
+         mu = scale(mu)) |> 
+  ungroup()
+
 ptm <- proc.time()
 m2tr.e <- brm(bf(count ~ Treatment + ExpDay + Paff + Iaff + mu +
                  Treatment : ExpDay +
@@ -456,3 +503,23 @@ m2tr.e <- brm(bf(count ~ Treatment + ExpDay + Paff + Iaff + mu +
 proc.time() - ptm
 pp_check(m2tr.e, ndraws = 100) + scale_x_log10()
 summary(m2tr.e)
+
+m3tr.e <- brm(bf(biovol ~ Treatment + ExpDay + Paff + Iaff + mu +
+                   Treatment : ExpDay +
+                   Paff : Treatment +
+                   Iaff : Treatment +
+                   mu : Treatment +
+                   (ExpDay|mesocosm)),
+              family = lognormal(),
+              chains = 4,
+              iter = 4000,
+              cores = 4,
+              control = list(adapt_delta = 0.95),
+              seed = 543,
+              backend = "cmdstanr", 
+              data = etr,
+              file = "models/Erk_traits-biovol-offset_20250718.m",
+              file_refit = "on_change"
+) 
+pp_check(m3tr.e, ndraws = 100) + scale_x_log10()
+summary(m3tr.e)
