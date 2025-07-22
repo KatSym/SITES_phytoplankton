@@ -40,7 +40,8 @@ edat <- erk.dat %>%
   summarise(count = sum(count),
             biovol = sum(mean_biovol),
             vol.offset = mean(vol.offset)) %>% 
-  mutate(gr_biovol = count*biovol/vol.offset) |> 
+  mutate(gr_biovol = count*biovol/vol.offset,
+         ExpDay = as.factor(ExpDay)) |> 
   ungroup()
 
 
@@ -56,23 +57,29 @@ edat.tr <- erk.dat %>%
   summarise(count = n(),
             mean_abd = mean(AbdDiameter),
             mean_len = mean(Length),
-            mean_biovol = mean(biovolMS),
+            mean_cellvol = mean(biovolMS),
             mean_sa = mean(surfacearea),
             mean_prob = mean(ProbabilityScore),
             vol.offset = mean(vol.offset)
   ) %>% 
-  
-  left_join(., functional.erk, by = join_by(label == Code)) %>%
-  mutate(class = substr(label, 1, 3),
-         label = ifelse(label == "ConSta000_2647648", "ZygSta000_2647648", label),
-         fun_grp = case_when(label == "FILAMENTS" ~ "III",
-                             label == "CyaPla000_3218374" ~ "III",
-                             class == "Bac" ~ "VI",
-                             .default = KRUK_MBFG)) %>% 
-  select(-taxon, -KRUK_MBFG, -Name) %>% 
+  # left_join(., functional.erk, by = join_by(label == Code)) %>%
+  # mutate(class = substr(label, 1, 3),
+  #        label = ifelse(label == "ConSta000_2647648", "ZygSta000_2647648", label),
+  #        fun_grp = case_when(label == "FILAMENTS" ~ "III",
+  #                            label == "CyaPla000_3218374" ~ "III",
+  #                            class == "Bac" ~ "VI",
+  #                            .default = KRUK_MBFG)) %>% 
+  # select(-taxon, -KRUK_MBFG, -Name) %>% 
   
   drop_na()  %>% 
-  full_join(., sp_trt, by = join_by(label == Code))
+  full_join(., species_traits, by = join_by(label == Code)) |> 
+  group_by(ExpDay, Treatment, mesocosm, label) %>% 
+  summarise(count = mean(count),
+            mean_cellvol = mean(mean_cellvol),
+            vol.offset = mean(vol.offset),
+            Paff = mean(Paff),
+            Iaff = mean(Iaff),
+            mu = mean(mu))
 
 scale(edat.tr[,15:17])
 
@@ -101,9 +108,12 @@ m2.e <- brm(bf(count ~ Treatment + ExpDay + fun_grp +
                  Treatment : ExpDay +
                  ExpDay : fun_grp +
                  fun_grp : Treatment +
-                 (ExpDay|mesocosm) +
+                 Treatment : ExpDay : fun_grp +
+                 (ExpDay + fun_grp +
+                    ExpDay : fun_grp |mesocosm) +
                  offset(log(vol.offset))),
             family = negbinomial(),
+            init = 0,
             chains = 4,
             iter = 4000,
             cores = 4,
@@ -111,7 +121,7 @@ m2.e <- brm(bf(count ~ Treatment + ExpDay + fun_grp +
             seed = 543,
             backend = "cmdstanr", 
             data = edat,
-            file = "models/Erk_FunctGrp-count-offset_20250708.m",
+            file = "models/Erk_FGrp_count-offset_20250722.m",
             file_refit = "on_change"
 ) 
 proc.time() - ptm
@@ -204,8 +214,11 @@ m3.e <- brm(bf(gr_biovol ~ Treatment + ExpDay + fun_grp +
                  Treatment : ExpDay +
                  ExpDay : fun_grp +
                  fun_grp : Treatment +
-                 (ExpDay|mesocosm)),
+                 Treatment : ExpDay : fun_grp +
+                 (ExpDay + fun_grp +
+                    ExpDay : fun_grp|mesocosm)),
             family = lognormal(),
+            init = 0,
             chains = 4,
             iter = 4000,
             cores = 4,
@@ -213,7 +226,7 @@ m3.e <- brm(bf(gr_biovol ~ Treatment + ExpDay + fun_grp +
             seed = 543,
             backend = "cmdstanr", 
             data = edat,
-            file = "models/Erk_FunctGrp-biovol-offset_20250709.m",
+            file = "models/Erk_FGrp-biovol_20250722.m",
             file_refit = "on_change"
 ) 
 proc.time() - ptm
@@ -278,12 +291,12 @@ labs(title = "Heterotroph",
 
 
 # --- Bolmen ----
-ptm <- proc.time()
 m1.b <- brm(bf(count ~ Treatment + ExpDay + fun_grp +
                  Treatment : ExpDay +
                  ExpDay : fun_grp +
                  fun_grp : Treatment +
-                 (ExpDay|mesocosm) +
+                 (ExpDay + fun_grp +
+                    ExpDay : fun_grp |mesocosm) +
                  offset(log(vol.offset))),
             family = negbinomial(),
             chains = 4,
@@ -293,10 +306,9 @@ m1.b <- brm(bf(count ~ Treatment + ExpDay + fun_grp +
             seed = 543,
             backend = "cmdstanr", 
             data = bolmen.f,
-            file = "models/Bol_FunctGrp-count-offset_20250716.m",
+            file = "models/Bol_FGrp-count-offset_20250722.m",
             file_refit = "on_change"
 ) 
-proc.time() - ptm
 
 pp_check(m1.b, ndraws = 100) + scale_x_log10()
 summary(m1.b)
@@ -474,8 +486,9 @@ labs(title = "Heterotroph",
 # traits models ----
 
 etr <- edat.tr |> 
-  select(ExpDay, Treatment, mesocosm, vol.offset, count, mean_biovol,  fun_grp, Paff, Iaff, mu) |> 
-  mutate(biovol = mean_biovol*count/vol.offset,
+  select(ExpDay, Treatment, mesocosm, label, vol.offset, count, mean_cellvol,  Paff, Iaff, mu) |> 
+  mutate(biovol = mean_cellvol*count/vol.offset,
+         ExpDay = as.factor(ExpDay),
          Paff = scale(Paff),
          Iaff = scale(Iaff),
          mu = scale(mu)) |> 
