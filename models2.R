@@ -216,17 +216,20 @@ mcomp = brm(
   ),
   family = dirichlet(),
   chains = 4,
-  iter = 12000,
+  iter = 6000,
   warmup = 3000,
   cores = 4,
-  control = list(adapt_delta = 0.99),
+  control = list(adapt_delta = 0.95),
   seed = 543,
   backend = "cmdstanr", 
   data = edat_comp
 ) 
-pp_check(mgroup, ndraws = 100)
-summary(mgroup)
-
+pp_check(mcomp, ndraws = 100)
+summary(mcomp)
+conditional_effects(mcomp, effects = "ExpDay",
+                    re_formula = NA,
+                    conditions = data.frame(Treatment = c("C","D","I","E")),
+                    categorical = T)
 
 mcomp = brm(
   bf(
