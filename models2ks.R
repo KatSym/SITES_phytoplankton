@@ -140,14 +140,47 @@ unique(edat_fgroup[,1:4])  |>
              vars(fun_grp))
 
 
+efgroup.pred <- edat_fgroup |> 
+  data_grid(Treatment = unique(edat_fgroup$Treatment),
+            ExpDay = seq_range(edat_fgroup$ExpDay, n = 37),
+            fun_grp = unique(edat_fgroup$fun_grp)) |> 
+  add_epred_draws(mgroup.e, re_formula = NA) 
 
-default_prior(bf(
-  log(voldens) ~ s(ExpDay, by = interaction(fun_grp, Treatment), k = 5) +
-    (ExpDay + fun_grp + ExpDay:fun_grp | mesocosm),
-  sigma ~ fun_grp
-),
-family = gaussian(),
-data = edat_fgroup)
+(plot <- efgroup.pred %>%
+    ggplot(aes(x = ExpDay,
+               y = .epred,
+               colour = Treatment)
+    ) +
+    stat_lineribbon(aes(y = (.epred),
+                        fill = Treatment),
+                    .width = c(0.95),
+                    # alpha = .5
+                    # position = position_dodge(.5),
+                    # linewidth = 2
+    )+
+    # geom_point(edat_comp_plt, mapping = aes(x = ExpDay,
+    #                                y = perc,
+    #                                colour = Treatment),
+    #            alpha = .35,
+    #            position = position_jitterdodge(dodge.width = .5),
+    # ) +
+    facet_wrap(~ fun_grp
+               , scales = "free_y"
+    )+
+    scale_color_manual(values = trt.cols) +
+    scale_fill_manual(values = fil.cols) +
+    labs(y = "Biovolume %",
+         x = "Experimental day")+
+    theme_bw())
+
+
+# default_prior(bf(
+#   log10(biovoldens) ~ s(ExpDay, by = interaction(fun_grp, Treatment), k = 5) +
+#     (ExpDay + fun_grp + ExpDay:fun_grp | mesocosm),
+#   sigma ~ fun_grp
+#                 ),
+#   family = gaussian(),
+#   data = edat_fgroup)
 
 
 mtot |> emmeans("Treatment", by = "ExpDay",
@@ -269,4 +302,273 @@ comp.pred <- edat_comp_plt |>
     scale_fill_manual(values = fil.cols) +
 labs(y = "Biovolume %",
      x = "Experimental day")+
+    theme_bw())
+
+# ---- Bolmen -----
+
+functional.bol <- read.csv("./data/Bolmen_functional.csv", header = T, sep = ",")
+
+
+# taxon level data
+bdat_tax <- bol.dat  |>  
+  filter(# drop the lake
+    Treatment != "BOL",
+    # remove labels with low confidence
+    ProbabilityScore > 0.5
+  ) |> 
+  mutate(Treatment = factor(Treatment, levels = c("C","D","I","E")),
+         vol.offset = volume_run*concfactor,
+         .keep = "unused") |>
+  group_by(ExpDay, Treatment, mesocosm, Name, label) |>
+  summarise(count = n(),
+            # average the two flowcam runs
+            abd = mean(AbdDiameter),
+            len = mean(Length),
+            cellvol = mean(biovolume), # cubic micrometers
+            sa = mean(surfacearea),
+            prob = mean(ProbabilityScore),
+            vol.offset = mean(vol.offset) # mL
+  ) |> 
+  ungroup() |> 
+  left_join(functional.bol, by = "label") |>
+  select(-Name) |> 
+  drop_na() |> 
+  mutate(taxonvol = count*cellvol) 
+
+
+# community level data
+bdat_tot = bdat_tax |> 
+  group_by(ExpDay, Treatment, mesocosm) |> 
+  summarise(count = sum(count),
+            biovol = sum(taxonvol),
+            vol.offset = mean(vol.offset)) |> 
+  mutate(dens = count/vol.offset,
+         biovoldens = biovol/vol.offset # cubic micro per mL
+  ) |> 
+  ungroup()
+
+
+# functional group level data
+bdat_fgroup = bdat_tax |> 
+  group_by(ExpDay, Treatment, mesocosm, fun_grp) |> 
+  summarise(count = sum(count),
+            biovol = sum(taxonvol),
+            vol.offset = mean(vol.offset)) |> 
+  mutate(dens = count/vol.offset,
+         biovoldens = biovol/vol.offset,
+         fun_grp = as.factor(fun_grp)) |> 
+  ungroup()
+
+## ---- models ----
+#### total biovolume ####
+
+mtot = brm(
+  bf(
+    log10(biovoldens) ~ s(ExpDay, by = Treatment, k = 5) +
+      (ExpDay|mesocosm)
+  ),
+  family = gaussian(),
+  chains = 4,
+  iter = 6000,
+  warmup = 3000,
+  cores = 4,
+  control = list(adapt_delta = 0.99),
+  seed = 543,
+  backend = "cmdstanr", 
+  data = bdat_tot
+) 
+pp_check(mtot, ndraws = 100)
+summary(mtot) 
+
+
+mtot |> emmeans("Treatment", by = "ExpDay",
+                # at = list(ExpDay = c(0,4,12,20,28,36))
+                at = list(ExpDay = seq_range(edat_tot$ExpDay, n = 31))
+) |> 
+  contrast(method = "trt.vs.ctrl") |>
+  gather_emmeans_draws() |> 
+  ggplot(aes(x = ExpDay, y = .value, fill = contrast)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey") +
+  stat_lineribbon(aes(y = .value), .width = c(0.95), #alpha = .5,
+                  point_interval = "mean_qi",
+                  linewidth = .25) + 
+  scale_fill_manual(values = c(#"#00000030",
+    "#0a875430",
+    "#4472ca30",
+    "#e8485530")) +
+  scale_x_continuous(breaks = c(0,4,12,20,28,36)) +
+  ylab("Difference") +
+  xlab("Experimental Day") +
+  theme_light() +
+  facet_wrap(vars(contrast))
+
+
+
+#### functional group biovolume ####
+
+
+mgroup = brm(
+  bf(
+    log10(biovoldens) ~ s(ExpDay, by = interaction(fun_grp, 
+                                                   Treatment), 
+                          k = 5) +
+      (ExpDay + fun_grp + ExpDay:fun_grp | mesocosm),
+    sigma ~ fun_grp
+  ),
+  family = gaussian(),
+  prior = prior(normal(0,4), class = "b")+
+    prior(exponential(2), class = "sd"),
+  init = 0,
+  chains = 4,
+  iter = 6000,
+  warmup = 3000,
+  cores = 4,
+  control = list(adapt_delta = 0.99,
+                 max_treedepth = 12),
+  seed = 543,
+  backend = "cmdstanr", 
+  data = bdat_fgroup
+) # 61 min
+
+saveRDS(mgroup, "models/Bol_mgroup_fcdat.rds")
+mgroup.b = readRDS("mgroup6000.RDS")
+pp_check(mgroup, ndraws = 100)
+summary(mgroup) 
+
+
+unique(bdat_fgroup[,1:4])  |> 
+  add_epred_draws(mgroup, re_formula = NULL) |>
+  ggplot(aes(x = ExpDay, y = log10(biovoldens), fill = Treatment)) +
+  stat_lineribbon(aes(y = .epred), .width = c(0.95), #alpha = .5,
+                  point_interval = "mean_qi",
+                  linewidth = .25) + 
+  geom_point(data = edat_fgroup, 
+             color = "black", alpha = .5, size = 1,
+             position = position_jitter(.9)) +
+  scale_fill_manual(values = c("#00000030",
+                               "#0a875430",
+                               "#4472ca30",
+                               "#e8485530")) +
+  scale_x_continuous(breaks = c(0,4,12,20,28,36)) +
+  ylab(expression(log(mu*m^3/mL))) +
+  xlab("Experimental Day") +
+  theme_light() +
+  #theme(legend.position = "none") +
+  facet_grid(vars(Treatment), 
+             vars(fun_grp))
+
+
+
+# default_prior(bf(
+#   log10(biovoldens) ~ s(ExpDay, by = interaction(fun_grp, Treatment), k = 5) +
+#     (ExpDay + fun_grp + ExpDay:fun_grp | mesocosm),
+#   sigma ~ fun_grp
+# ),
+# family = gaussian(),
+# data = bdat_fgroup)
+
+
+
+######### compositional changes ###########################
+
+bdat_comp <- bdat_fgroup |> 
+  select(ExpDay, Treatment, mesocosm, fun_grp, biovoldens) |> 
+  pivot_wider(names_from = "fun_grp",
+              values_from = "biovoldens") |> 
+  # select(-V) |> 
+  mutate(tot_biov = rowSums(across(c(I,II,III,IV,
+                                     V,
+                                     VI,VII)), na.rm = T),
+         across(c(I, II, III, IV, 
+                  V,
+                  VI, VII),
+                ~ . / tot_biov),
+         I = replace_na(I, 1e-06),
+         II = replace_na(II, 1e-06),
+         V = replace_na(V, 1e-06),
+         tot_biov = rowSums(across(c(I,II,III,IV,
+                                     V,
+                                     VI,VII)), na.rm = T),
+         across(c(I, II, III, IV, 
+                  V,
+                  VI, VII),
+                ~ . / tot_biov)
+  )
+
+# make a 'list' column with all percentages
+bdat_comp$Y = with(bdat_comp, cbind(I,II,III,IV,
+                                    V,
+                                    VI,VII))
+
+mcomp = brm(
+  bf(
+    Y ~ s(ExpDay, by = Treatment, k = 5) +
+      (ExpDay | mesocosm)
+  ),
+  family = dirichlet(),
+  chains = 4,
+  iter = 6000,
+  warmup = 3000,
+  cores = 4,
+  control = list(adapt_delta = 0.95),
+  seed = 543,
+  backend = "cmdstanr",
+  data = bdat_comp
+)
+pp_check(mcomp, ndraws = 100)
+summary(mcomp)
+
+saveRDS(mcomp, "models/Bol_funct-comp_all.rds") # 26 min
+
+
+mcomp.b <- readRDS("models/Bol_funct-comp_all.rds")
+mcompV <- readRDS("models/Erk_funct-comp_notV.rds")
+
+conditional_effects(mcomp.b, effects = "ExpDay",
+                    re_formula = NA,
+                    conditions = data.frame(Treatment = c("C","D","I","E")),
+                    categorical = T, points = T)
+
+
+bdat_comp_plt <- bdat_comp |> 
+  pivot_longer(c(I, II, III, IV, V, VI, VII), 
+               names_to = "fun_grp", 
+               values_to = "perc") |> 
+  select(-Y) |> 
+  group_by(ExpDay, Treatment, mesocosm, fun_grp) |> 
+  summarise(perc = sum(perc)) |> 
+  ungroup()
+
+compb.pred <- bdat_comp_plt |>  
+  data_grid(Treatment = unique(bdat_comp$Treatment),
+            ExpDay = seq_range(bdat_comp$ExpDay, n = 37)) |> 
+  add_epred_draws(mcomp, re_formula = NA) |> 
+  rename(fun_grp = .category)
+
+
+(plot <- compb.pred %>%
+    ggplot(aes(x = ExpDay,
+               y = .epred,
+               colour = fun_grp)
+    ) +
+    stat_lineribbon(aes(y = (.epred),
+                        fill = fun_grp),
+                    .width = c(0.95),
+                    alpha = .5
+                    # position = position_dodge(.5),
+                    # linewidth = 2
+    )+
+    geom_point(edat_comp_plt, mapping = aes(x = ExpDay,
+                                   y = perc,
+                                   colour = fun_grp),
+               alpha = .35,
+               position = position_jitterdodge(dodge.width = .5),
+    ) +
+    facet_wrap(~ Treatment
+               , scales = "free_y"
+    )+
+    # scale_color_manual(values = trt.cols) +
+    # scale_fill_manual(values = fil.cols) +
+    labs(y = "Biovolume %",
+         x = "Experimental day")+
     theme_bw())
