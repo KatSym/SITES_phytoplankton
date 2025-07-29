@@ -71,7 +71,7 @@ edat_fgroup = edat_tax %>%
 
 mtot = brm(
   bf(
-    log(voldens) ~ s(ExpDay, by = Treatment, k = 5) +
+    log(voldens) ~ Treatment + s(ExpDay, by = Treatment, k = 5) +
       (ExpDay|mesocosm)
   ),
   family = gaussian(),
@@ -137,22 +137,19 @@ mtot %>% emmeans("Treatment", by = "ExpDay",
 
 mgroup = brm(
   bf(
-    log(voldens) ~ s(ExpDay, by = interaction(fun_grp, 
-                                              Treatment), 
+    log(voldens) ~ fun_grp*Treatment + 
+      s(ExpDay, by = interaction(fun_grp,Treatment), 
                      k = 5) +
-      (ExpDay + fun_grp + ExpDay:fun_grp | mesocosm),
-    sigma ~ fun_grp
+      (ExpDay + fun_grp + ExpDay:fun_grp | mesocosm)
+    ,sigma ~ fun_grp
   ),
   family = gaussian(),
-  prior = prior(normal(0,5), class = "b")+
-          prior(exponential(2), class = "sd"),
   init = 0,
   chains = 4,
   iter = 6000,
   warmup = 3000,
   cores = 4,
-  control = list(adapt_delta = 0.99,
-                 max_treedepth = 12),
+  control = list(adapt_delta = 0.99),
   seed = 543,
   backend = "cmdstanr", 
   data = edat_fgroup
@@ -211,7 +208,7 @@ edat_comp$Y = with(edat_comp, cbind(I,II,III,IV,V,VI,VII))
 
 mcomp = brm(
   bf(
-    Y ~ s(ExpDay, by = Treatment, k = 5) +
+    Y ~ Treatment + s(ExpDay, by = Treatment, k = 5) +
        (ExpDay | mesocosm)
   ),
   family = dirichlet(),
