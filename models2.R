@@ -199,14 +199,15 @@ edat_comp = edat_fgroup %>%
   mutate(tot_biov = rowSums(across(c(I,II,III,IV,V,VI,VII)), na.rm = T)) %>% 
   mutate(across(c(I, II, III, IV, V, VI, VII),
                 ~ . / tot_biov)) %>% 
-  mutate(V = replace_na(V, 1e-06)) %>% 
+  mutate(V = replace_na(V, 1e-09)) %>% 
   mutate(tot_biov = rowSums(across(c(I,II,III,IV,V,VI,VII)), na.rm = T)) %>% 
   mutate(across(c(I, II, III, IV, V, VI, VII),
                 ~ . / tot_biov))
 
+
 edat_comp$Y = with(edat_comp, cbind(I,II,III,IV,V,VI,VII))
 
-mcomp = brm(
+mcomp1 = brm(
   bf(
     Y ~ Treatment + s(ExpDay, by = Treatment, k = 5) +
        (ExpDay | mesocosm)
@@ -218,7 +219,7 @@ mcomp = brm(
   cores = 4,
   control = list(adapt_delta = 0.95),
   seed = 543,
-  backend = "cmdstanr", 
+  backend = "cmdstanr",
   data = edat_comp
 ) 
 pp_check(mcomp, ndraws = 100)
@@ -228,21 +229,38 @@ conditional_effects(mcomp, effects = "ExpDay",
                     conditions = data.frame(Treatment = c("C","D","I","E")),
                     categorical = T)
 
+
+
+
 mcomp = brm(
   bf(
-    Y ~ s(ExpDay, by = Treatment, k = 5) +
+    Y ~ Treatment + s(ExpDay, by = Treatment, k = 5) +
       (ExpDay | mesocosm)
   ),
   family = logistic_normal(),
   prior = prior("lkj(3)", "lncor"),
   chains = 4,
-  iter = 12000,
+  iter = 6000,
   warmup = 3000,
   cores = 4,
-  control = list(adapt_delta = 0.99),
+  control = list(adapt_delta = 0.9),
   seed = 543,
   backend = "cmdstanr", 
   data = edat_comp
 ) 
-pp_check(mgroup, ndraws = 100)
-summary(mgroup)
+
+
+pp_check(mcomp, ndraws = 100)
+summary(mcomp)
+
+edat_tax_comp = edat_tax %>% 
+  select(ExpDay, Treatment, mesocosm, fun_grp, taxon, taxonvol) %>% 
+  pivot_wider(names_from = "taxon",
+              values_from = "taxonvol") %>% 
+  mutate(tot_biov = rowSums(across(c(I,II,III,IV,V,VI,VII)), na.rm = T)) %>% 
+  mutate(across(c(I, II, III, IV, V, VI, VII),
+                ~ . / tot_biov)) %>% 
+  mutate(V = replace_na(V, 1e-09)) %>% 
+  mutate(tot_biov = rowSums(across(c(I,II,III,IV,V,VI,VII)), na.rm = T)) %>% 
+  mutate(across(c(I, II, III, IV, V, VI, VII),
+                ~ . / tot_biov))
