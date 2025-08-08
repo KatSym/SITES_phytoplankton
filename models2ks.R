@@ -19,11 +19,14 @@ edat_tax <- erk.dat  |>
   ) |> 
   mutate(Treatment = factor(Treatment, levels = c("C","D","I","E")),
          vol.offset = volume_run*concfactor,
-         label = ifelse(label == "ConSta000_2647648", "ZygSta000_2647648", label),
+         label = case_when(label == "ConSta000_2647648" ~ "ZygSta000_2647648",
+                           label == "Heliozoa_0000000" ~ "ChlGolrad_2641100",
+                           .default = label),
          .keep = "unused") |>
   group_by(ExpDay, Treatment, mesocosm, Name, label) |>
-  summarise(count = n(),
-            # average the two flowcam runs
+  summarise(# get the count of each taxon
+            count = n(),
+            # get the average properties of ech taxon per run
             abd = mean(AbdDiameter),
             len = mean(Length),
             cellvol = mean(biovolMS), # cubic micrometers
@@ -31,14 +34,25 @@ edat_tax <- erk.dat  |>
             prob = mean(ProbabilityScore),
             vol.offset = mean(vol.offset) # mL
             ) |> 
+  group_by(ExpDay, Treatment, mesocosm, label) |>
+  summarise(count = mean(count),
+            # average the two flowcam runs
+            abd = mean(abd),
+            len = mean(len),
+            cellvol = mean(cellvol), # cubic micrometers
+            sa = mean(sa),
+            prob = mean(prob),
+            vol.offset = mean(vol.offset) # mL
+            ) |> 
   ungroup() |> 
   left_join(functional.erk, by = join_by(label == Code)) |>
   mutate(class = substr(label, 1, 3),
          fun_grp = case_when(label == "FILAMENTS" ~ "III",
+                             label == "ChlGolrad_2641100" ~ "I",
                              label == "CyaPla000_3218374" ~ "III",
                              class == "Bac" ~ "VI",
                              .default = KRUK_MBFG)) |> 
-  select(-taxon, -KRUK_MBFG, -Name) |> 
+  select(-taxon, -KRUK_MBFG) |> 
   drop_na() |> 
   mutate(taxonvol = count*cellvol) 
 
@@ -131,7 +145,7 @@ mgroup = brm(
   seed = 543,
   backend = "cmdstanr",
   data = edat_fgroup
-) # 61 min
+) # 79 min
 
 saveRDS(mgroup, "models/Erk_mfgroup_fcdat.rds")
 mgroup.e <- readRDS("models/Erk_mfgroup_fcdat.rds")
@@ -175,7 +189,7 @@ unique(edat_fgroup[,1:4])  |>
 
 efgroup.pred <- edat_fgroup |> 
   data_grid(Treatment = unique(edat_fgroup$Treatment),
-            ExpDay = seq_range(edat_fgroup$ExpDay, n = 37),
+            ExpDay = seq_range(edat_fgroup$ExpDay, n = 25),
             fun_grp = unique(edat_fgroup$fun_grp),
             mesocosm = unique(edat_fgroup$mesocosm)) |> 
   add_epred_draws(mgroup.e, re_formula = NULL) 
@@ -217,7 +231,8 @@ efgroup.pred <- edat_fgroup |>
     theme_bw())
 
 contrasts.e <- efgroup.pred |> 
-  filter(ExpDay %in% unique(edat_comp$ExpDay)) |> 
+  ungroup() |> 
+  mutate(ExpDay %in% unique(edat_comp$ExpDay)) |> 
   compare_levels(.epred, by = Treatment,
                  comparison = pairwise) |> 
   mean_qi() |> 
@@ -308,8 +323,8 @@ edat_comp$Y = with(edat_comp, cbind(I,II,III,IV,V,VI,VII))
 #   seed = 543,
 #   backend = "cmdstanr",
 #   data = edat_comp
-# ) # 40 min
-pp_check(mcomp, ndraws = 100)
+# ) # 35 min
+pp_check(mcomp.e, ndraws = 100)
 summary(mcomp.e)
 
  saveRDS(mcomp, "models/Erk_funct-comp_all1.rds") # 36 min
@@ -317,7 +332,7 @@ summary(mcomp.e)
 mcomp.e <- readRDS("models/Erk_funct-comp_all1.rds")
 
 conditional_effects(mcomp.e, effects = "ExpDay",
-                    re_formula = NA,
+                    re_formula = NULL,
                     conditions = data.frame(Treatment = c("C","D","I","E")),
                     categorical = T, points = T) 
 
@@ -333,10 +348,11 @@ edat_comp_plt <- edat_comp |>
 
 comp.pred <- edat_comp_plt |>  
   data_grid(Treatment = unique(edat_comp$Treatment),
-            ExpDay = seq_range(edat_comp$ExpDay, n = 37),
+            ExpDay = seq_range(edat_comp$ExpDay, n = 25),
             mesocosm = unique(edat_comp$mesocosm)) |> 
   add_epred_draws(mcomp.e, re_formula = NULL) |> 
-  rename(fun_grp = .category) 
+  rename(fun_grp = .category) |> 
+  ungroup()
 
 
 (plot <- comp.pred %>%
@@ -347,16 +363,16 @@ comp.pred <- edat_comp_plt |>
     stat_lineribbon(aes(y = (.epred),
                         fill = fun_grp),
                     .width = c(0.95),
-                    # alpha = .5
+                    alpha = .5
                     # position = position_dodge(.5),
                     # linewidth = 2
     )+
-    # geom_point(edat_comp_plt, mapping = aes(x = ExpDay,
-    #                                y = perc,
-    #                                colour = Treatment),
-    #            alpha = .35,
-    #            position = position_jitterdodge(dodge.width = .5),
-    # ) +
+    geom_point(edat_comp_plt, mapping = aes(x = ExpDay,
+                                   y = perc,
+                                   colour = fun_grp),
+               alpha = .35,
+               position = position_jitterdodge(dodge.width = .5),
+    ) +
     facet_wrap(~ Treatment
                , scales = "free_y"
     )+
