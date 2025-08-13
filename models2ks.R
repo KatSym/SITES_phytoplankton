@@ -10,6 +10,13 @@ load("./data/sites_FC_phyto.RData")
 # ----- Erken ------
 functional.erk <- read.csv("./data/Erken_functional.csv", header = T, sep = ",")
 
+large_phyto <- read.csv("data/Erken_large_phyto.csv") |> 
+  rename(ExpDay = day) |> 
+  pivot_longer(cols = 5:8, names_sep = "_", names_to = c("taxon", "variable"), values_to = "val") |> 
+  pivot_wider(id_cols = c(ExpDay, Treatment, mesocosm, taxon), names_from = variable, values_from = val) |> 
+  mutate(label = ifelse(taxon == "gloe", "CyaGloech_0000000", "BacFracro_3192403"),
+         fun_grp = ifelse(taxon == "gloe", "Gloe", "VI"), .keep = "unused")
+
 # taxon level data
 edat_tax <- erk.dat  |>  
   filter(# drop the lake
