@@ -89,12 +89,12 @@ erk_large_phyto <- frag_count |>
   left_join(frag_meas, by = c("day", "Treatment", "mesocosm")) |> 
   left_join(gloe_diam, by = "day") |> 
   rename(gloe_count = gloeotrichia) |> 
-  #calculate abundance (colonies per L) and biovolume (um3 per L)
-  # mutate(frag_abund = frag_count/(sample_vol_ml/1000),
-  #        frag_biovol = frag_abund * frag_vol,
-  #        gloe_abund = gloeotrichia/(sample_vol_ml/1000),
-  #        gloe_biovol = gloe_abund * gloe_vol,
-  #        .keep = "unused") |> 
+  # calculate abundance (colonies per mL) and biovolume (um3 per mL)
+  mutate(frag_abund = frag_count/(sample_vol_ml),
+         frag_biovol = frag_abund * frag_vol,
+         gloe_abund = gloe_count/(sample_vol_ml),
+         gloe_biovol = gloe_abund * gloe_vol,
+         .keep = "unused") |>
   select(-volvox)
 
 

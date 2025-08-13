@@ -11,11 +11,13 @@ load("./data/sites_FC_phyto.RData")
 functional.erk <- read.csv("./data/Erken_functional.csv", header = T, sep = ",")
 
 large_phyto <- read.csv("data/Erken_large_phyto.csv") |> 
-  rename(ExpDay = day) |> 
-  pivot_longer(cols = 5:8, names_sep = "_", names_to = c("taxon", "variable"), values_to = "val") |> 
-  pivot_wider(id_cols = c(ExpDay, Treatment, mesocosm, taxon), names_from = variable, values_from = val) |> 
+  pivot_longer(cols = 4:7, names_sep = "_", names_to = c("taxon", "variable"), values_to = "val") |> 
+  pivot_wider(id_cols = c(day, Treatment, mesocosm, taxon), names_from = variable, values_from = val) |> 
   mutate(label = ifelse(taxon == "gloe", "CyaGloech_0000000", "BacFracro_3192403"),
-         fun_grp = ifelse(taxon == "gloe", "Gloe", "VI"), .keep = "unused")
+         fun_grp = ifelse(taxon == "gloe", "Gloe", "VI"), .keep = "unused") |> 
+  rename(ExpDay = day,
+         dens = abund,
+         biovoldens = biovol)
 
 # taxon level data
 edat_tax <- erk.dat  |>  
@@ -86,8 +88,14 @@ edat_fgroup = edat_tax |>
          biovoldens = biovol/vol.offset,
          # ExpDay = as.factor(ExpDay),
          fun_grp = as.factor(fun_grp)) |> 
+  ungroup() |> 
+  full_join(large_phyto, by = c("ExpDay", "Treatment", "mesocosm", "fun_grp")) |> 
+  group_by(ExpDay, Treatment, mesocosm, fun_grp) |> 
+  summarise(dens = sum(dens.x, dens.y, na.rm = T),
+            biovoldens = sum(biovoldens.x, biovoldens.y,  na.rm = T)) |> 
   ungroup()
-
+  
+  
 ## ---- models ----
 ### total biovolume ####
 
