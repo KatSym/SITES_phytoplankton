@@ -3,6 +3,7 @@ library(brms)
 library(tidybayes)
 library(emmeans)
 library(modelr)
+library(OpenCL)
 # library(see)
 
 load("./data/sites_FC_phyto.RData")
@@ -93,8 +94,11 @@ edat_fgroup = edat_tax |>
   group_by(ExpDay, Treatment, mesocosm, fun_grp) |> 
   summarise(dens = sum(dens.x, dens.y, na.rm = T),
             biovoldens = sum(biovoldens.x, biovoldens.y,  na.rm = T)) |> 
-  ungroup()
-  
+  ungroup() %>% 
+  mutate(Treatment = factor(Treatment, levels = c("C", "D", "I", "E")),
+         fun_grp = factor(fun_grp, 
+                          levels = c("I", "II", "III", "IV", "V", "VI", "VII", "Gloe")),
+         across(biovoldens,  ~replace(.x, .x == 0 & ExpDay == 36, NA)))
   
 ## ---- models ----
 ### total biovolume ####
@@ -139,7 +143,7 @@ mtot |> emmeans("Treatment", by = "ExpDay",
 
 ### functional group biovolume ####
 
-mgroup = brm(
+mgroup.e = brm(
   bf(
     log10(biovoldens) ~ fun_grp*Treatment + 
       s(ExpDay, by = interaction(fun_grp, Treatment), k = 5) +
@@ -151,23 +155,23 @@ mgroup = brm(
   #   prior(exponential(2), class = "sd"),
   init = 0,
   chains = 4,
+  # opencl = opencl(c(0, 0)),
   iter = 6000,
   warmup = 3000,
   cores = 4,
-  control = list(adapt_delta = 0.99
-                 # max_treedepth = 12
+  control = list(adapt_delta = 0.99,
+                 max_treedepth = 12
                  ),
   seed = 543,
   backend = "cmdstanr",
-  data = edat_fgroup
-) # 79 min
+  data = edat_fgroup) # 79 min
 
 saveRDS(mgroup, "models/Erk_mfgroup_fcdat.rds")
 mgroup.e <- readRDS("models/Erk_mfgroup_fcdat.rds")
 # mgroup.e <- readRDS("mgroup6000_fcdat.RDS")
 
 pp_check(mgroup.e, ndraws = 100)
-summary(mgroup.e) 
+summary(mgroup) 
 
 # default_prior(bf(
 #   log10(biovoldens) ~ s(ExpDay, by = interaction(fun_grp, Treatment), k = 5) +
@@ -181,18 +185,23 @@ summary(mgroup.e)
 #### plots ----
 
 unique(edat_fgroup[,1:4])  |> 
-  add_epred_draws(mgroup.e, re_formula = NULL) |>
+  add_epred_draws(mgroup.e, re_formula = NULL) %>% 
+  ungroup() %>% 
+  mutate(Treatment = factor(Treatment, levels = c("C", "D", "I", "E")),
+         fun_grp - factor(fun_grp, 
+                          levels = c("I", "II", "III", "IV", "V", "VI", "VII", "Gloe"))) |>
   ggplot(aes(x = ExpDay, y = log10(biovoldens), fill = Treatment)) +
   stat_lineribbon(aes(y = .epred), .width = c(0.95), #alpha = .5,
                   point_interval = "mean_qi",
                   linewidth = .25) + 
   geom_point(data = edat_fgroup, 
-             color = "black", alpha = .5, size = 1,
+             color = "black", alpha = .6, size = 1,
              position = position_jitter(.9)) +
   scale_fill_manual(values = c("#00000030",
                                "#45766130",
                                "#5e8fcd30",
-                               "#e79f4f30"))+
+                               "#e79f4f30"
+                               ))+
   scale_x_continuous(breaks = c(0,4,12,20,28,36)) +
   ylab(expression(log(mu*m^3/mL))) +
   xlab("Experimental Day") +
@@ -207,7 +216,8 @@ efgroup.pred <- edat_fgroup |>
             ExpDay = seq_range(edat_fgroup$ExpDay, n = 25),
             fun_grp = unique(edat_fgroup$fun_grp),
             mesocosm = unique(edat_fgroup$mesocosm)) |> 
-  add_epred_draws(mgroup.e, re_formula = NULL) 
+  add_epred_draws(mgroup.e, re_formula = NULL) %>% 
+  ungroup()
 
 
 (plot1 <- edat_fgroup %>%
@@ -245,14 +255,6 @@ efgroup.pred <- edat_fgroup |>
          x = "Experimental day")+
     theme_bw())
 
-contrasts.e <- efgroup.pred |> 
-  ungroup() |> 
-  mutate(ExpDay %in% unique(edat_comp$ExpDay)) |> 
-  compare_levels(.epred, by = Treatment,
-                 comparison = pairwise) |> 
-  mean_qi() |> 
-  as.data.frame() |>
-  mutate(ExpDay = as.factor(ExpDay))
 
 
 mgroup.e |> emmeans("Treatment", by = c("ExpDay", "fun_grp"),
@@ -266,15 +268,27 @@ mgroup.e |> emmeans("Treatment", by = c("ExpDay", "fun_grp"),
                   linewidth = .25) + 
   scale_fill_manual(values = c(
     # "#00000030",
-                               "#45766130",
-                               "#5e8fcd30",
-                               "#e79f4f30"), guide = F) +
+                               "#45766150",
+                               "#e79f4f50",
+                               "#5e8fcd50"
+                               ), guide = F) +
   scale_x_continuous(breaks = c(0,4,12,20,28,36)) +
   ylab("Difference") +
   xlab("Experimental Day") +
   theme_bw() +
   ggh4x::facet_grid2(fun_grp ~ contrast) 
 
+contrasts.e <- edat_fgroup |> 
+  data_grid(Treatment = unique(edat_fgroup$Treatment),
+            ExpDay = unique(edat_fgroup$ExpDay),
+            fun_grp = unique(edat_fgroup$fun_grp),
+            mesocosm = unique(edat_fgroup$mesocosm)) |> 
+  add_epred_draws(mgroup.e, re_formula = NULL) %>% 
+  compare_levels(.epred, by = Treatment,
+                 comparison = pairwise) |> 
+  mean_qi() |> 
+  as.data.frame() |>
+  mutate(ExpDay = as.factor(ExpDay))
 
 contrasts.e |> 
   # filter(fun_grp == "I") |> 
@@ -309,38 +323,45 @@ contrasts.e |>
 
 edat_comp <- edat_fgroup |> 
   select(ExpDay, Treatment, mesocosm, fun_grp, biovoldens) |> 
+  # no Gloeotrichia for the last day so everything will be wrong
+  filter(ExpDay !=36) %>% 
   pivot_wider(names_from = "fun_grp",
               values_from = "biovoldens") |> 
+  relocate("Gloe", .after = "VII") %>% 
   # select(-V) |> 
-  mutate(tot_biov = rowSums(across(c(I,II,III,IV,V,VI,VII)), na.rm = T),
-         across(c(I, II, III, IV,V,VI, VII),
-                ~ . / tot_biov),
-         V = replace_na(V, 1e-06),
-         tot_biov = rowSums(across(c(I,II,III,IV,V,VI,VII)), na.rm = T),
-         across(c(I, II, III, IV,V,VI, VII),
-                ~ . / tot_biov)
-         )
+  mutate(
+    # Gloe = ifelse(Gloe == 0, NA, Gloe),
+    #      Treatment = factor(Treatment, levels = c("C", "D", "I", "E")),
+    tot_biov = rowSums(across(c(I,II,III,IV,V,VI,VII, Gloe)), na.rm = T),
+    across(c(I, II, III, IV,V,VI, VII, Gloe),
+           ~ . / tot_biov)) %>% 
+    mutate(V = replace_na(V, 1e-06),
+    Gloe = replace_na(Gloe, 1e-06)) %>% 
+  mutate(tot_biov = rowSums(across(c(I,II,III,IV,V,VI,VII, Gloe)), na.rm = T),
+         across(c(I, II, III, IV,V,VI, VII, Gloe),
+                ~ . / tot_biov) )
+              
 
 # make a 'list' column with all percentages
-edat_comp$Y = with(edat_comp, cbind(I,II,III,IV,V,VI,VII))
+edat_comp$Y = with(edat_comp, cbind(I,II,III,IV,V,VI,VII, Gloe))
 
-# mcomp = brm(
-#   bf(
-#     Y ~ Treatment+ s(ExpDay, by = Treatment, k = 5) +
-#       (ExpDay | mesocosm)
-#   ),
-#   family = dirichlet(),
-#   chains = 4,
-#   iter = 6000,
-#   warmup = 3000,
-#   cores = 4,
-#   control = list(adapt_delta = 0.95),
-#   seed = 543,
-#   backend = "cmdstanr",
-#   data = edat_comp
-# ) # 35 min
+mcomp = brm(
+  bf(
+    Y ~ Treatment+ s(ExpDay, by = Treatment, k = 5) +
+      (ExpDay | mesocosm)
+  ),
+  family = dirichlet(),
+  chains = 4,
+  iter = 6000,
+  warmup = 3000,
+  cores = 4,
+  control = list(adapt_delta = 0.95),
+  seed = 543,
+  backend = "cmdstanr",
+  data = edat_comp
+) # 35 min
 pp_check(mcomp.e, ndraws = 100)
-summary(mcomp.e)
+summary(mcomp)
 
  saveRDS(mcomp, "models/Erk_funct-comp_all1.rds") # 36 min
 
@@ -391,6 +412,8 @@ comp.pred <- edat_comp_plt |>
     facet_wrap(~ Treatment
                , scales = "free_y"
     )+
+    ggokabeito::scale_fill_okabe_ito() + 
+    ggokabeito::scale_color_okabe_ito() +
     # scale_color_manual(values = trt.cols) +
     # scale_fill_manual(values = fil.cols) +
 labs(y = "Biovolume %",
