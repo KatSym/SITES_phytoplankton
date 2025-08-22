@@ -3,7 +3,6 @@ library(brms)
 library(tidybayes)
 library(emmeans)
 library(modelr)
-library(OpenCL)
 # library(see)
 
 load("./data/sites_FC_phyto.RData")
@@ -197,10 +196,10 @@ unique(edat_fgroup[,1:4])  |>
   geom_point(data = edat_fgroup, 
              color = "black", alpha = .6, size = 1,
              position = position_jitter(.9)) +
-  scale_fill_manual(values = c("#00000030",
-                               "#45766130",
-                               "#5e8fcd30",
-                               "#e79f4f30"
+  scale_fill_manual(values = c("#00000050",
+                               "#45766150",
+                               "#5e8fcd50",
+                               "#e79f4f50"
                                ))+
   scale_x_continuous(breaks = c(0,4,12,20,28,36)) +
   ylab(expression(log(mu*m^3/mL))) +
@@ -226,9 +225,6 @@ efgroup.pred <- edat_fgroup |>
                colour = Treatment)
     ) +
     geom_point(
-      # edat_fgroup, mapping = aes(x = ExpDay,
-      #                              y = log10(biovoldens),
-      #                              colour = Treatment),
                alpha = .3,
                position = position_jitterdodge(dodge.width = .5),
     ) +
@@ -238,7 +234,7 @@ efgroup.pred <- edat_fgroup |>
                     .width = c(0.95),
                     # alpha = .5
                     # position = position_dodge(.5),
-                    linewidth = .5
+                    linewidth = .7
     )+
     facet_wrap(~ fun_grp
                , scales = "free_y"
@@ -256,7 +252,7 @@ efgroup.pred <- edat_fgroup |>
     theme_bw())
 
 
-
+# treatment - control differences
 mgroup.e |> emmeans("Treatment", by = c("ExpDay", "fun_grp"),
                 at = list(ExpDay = c(0,4,12,20,28,36))) |> 
   contrast(method = "trt.vs.ctrl") |>
@@ -276,8 +272,11 @@ mgroup.e |> emmeans("Treatment", by = c("ExpDay", "fun_grp"),
   ylab("Difference") +
   xlab("Experimental Day") +
   theme_bw() +
-  ggh4x::facet_grid2(fun_grp ~ contrast) 
+  ggh4x::facet_grid2(fun_grp ~ contrast, 
+                     scales = "free_y", 
+                     independent = "y") 
 
+# all contrasts
 contrasts.e <- edat_fgroup |> 
   data_grid(Treatment = unique(edat_fgroup$Treatment),
             ExpDay = unique(edat_fgroup$ExpDay),
@@ -323,8 +322,6 @@ contrasts.e |>
 
 edat_comp <- edat_fgroup |> 
   select(ExpDay, Treatment, mesocosm, fun_grp, biovoldens) |> 
-  # no Gloeotrichia for the last day so everything will be wrong
-  filter(ExpDay !=36) %>% 
   pivot_wider(names_from = "fun_grp",
               values_from = "biovoldens") |> 
   relocate("Gloe", .after = "VII") %>% 
@@ -363,7 +360,7 @@ mcomp = brm(
 pp_check(mcomp.e, ndraws = 100)
 summary(mcomp)
 
- saveRDS(mcomp, "models/Erk_funct-comp_all1.rds") # 36 min
+ saveRDS(mcomp, "models/Erk_funct-comp_all.rds") # 36 min
 
 mcomp.e <- readRDS("models/Erk_funct-comp_all1.rds")
 
@@ -394,10 +391,10 @@ comp.pred <- edat_comp_plt |>
 (plot <- comp.pred %>%
     ggplot(aes(x = ExpDay,
                y = .epred,
-               colour = fun_grp)
+               colour = Treatment)
     ) +
     stat_lineribbon(aes(y = (.epred),
-                        fill = fun_grp),
+                        fill = Treatment),
                     .width = c(0.95),
                     alpha = .5
                     # position = position_dodge(.5),
@@ -405,17 +402,17 @@ comp.pred <- edat_comp_plt |>
     )+
     geom_point(edat_comp_plt, mapping = aes(x = ExpDay,
                                    y = perc,
-                                   colour = fun_grp),
+                                   colour = Treatment),
                alpha = .35,
                position = position_jitterdodge(dodge.width = .5),
     ) +
-    facet_wrap(~ Treatment
+    facet_wrap(~ fun_grp
                , scales = "free_y"
     )+
-    ggokabeito::scale_fill_okabe_ito() + 
-    ggokabeito::scale_color_okabe_ito() +
-    # scale_color_manual(values = trt.cols) +
-    # scale_fill_manual(values = fil.cols) +
+    # ggokabeito::scale_fill_okabe_ito() + 
+    # ggokabeito::scale_color_okabe_ito() +
+    scale_color_manual(values = trt.cols) +
+    scale_fill_manual(values = fil.cols) +
 labs(y = "Biovolume %",
      x = "Experimental day")+
     theme_bw())
@@ -820,8 +817,8 @@ compb.pred <- bdat_comp_plt |>
     facet_wrap(~ Treatment
                , scales = "free_y"
     )+
-    # scale_color_manual(values = trt.cols) +
-    # scale_fill_manual(values = fil.cols) +
+    ggokabeito::scale_fill_okabe_ito() + 
+    ggokabeito::scale_color_okabe_ito() +
     labs(y = "Biovolume %",
          x = "Experimental day")+
     theme_bw())

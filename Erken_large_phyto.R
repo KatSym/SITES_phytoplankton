@@ -1,25 +1,22 @@
-# gloeotrichia counts
-gloe <- read.csv("data/gloeotrichia_colonies.csv", header = T) |> 
-  select(day.of.experiment, mesocosm, treatment, sample.volume..ml., gloeotrichia) |> 
-  rename(day = day.of.experiment,
-         Treatment = treatment,
-         sample_vol_ml = sample.volume..ml.) |> 
-  filter(Treatment != "LE") |> 
-  mutate(mesocosm = as.numeric(mesocosm))
+library(readxl)
 
-# volvox counts
-volv <- read.csv("data/rotifers_volvoxes.csv", header = T) |> 
-  select(day.of.experiment, mesocosm, treatment, sample.volume..ml., volvox) |> 
-  rename(day = day.of.experiment,
+# gloeotrichia counts
+gloe <- read_xlsx("data/gloeotrichia_colonies_etc.xlsx",
+                  sheet = 1,
+                  range = "A1:G107") |>
+  rename(day = `day of experiment`, 
          Treatment = treatment,
-         sample_vol_ml = sample.volume..ml.) |> 
+         sample_vol_ml = `sample volume (ml)`) |> 
+  select(day, mesocosm, Treatment, sample_vol_ml, gloeotrichia) |> 
   filter(Treatment != "LE") |> 
-  mutate(mesocosm = as.numeric(mesocosm))
+  mutate(mesocosm = as.numeric(mesocosm),
+         day = as.numeric(day))
+
 
 # fragilaria counts
-frag <- readxl::read_xlsx("data/diatoms_left_out_of_the_flowcam.xlsx", 
-                          sheet = 1,
-                          range = "A2:L108") |> 
+frag <- read_xlsx("data/gloeotrichia_colonies_etc.xlsx",
+                  sheet = 2,
+                  range = "A2:J91") |> 
   filter(treatment != "LE") |> 
   rename(day = `day of experiment`, 
          Treatment = treatment,
@@ -48,7 +45,8 @@ frag_count <- full_join(frag, frag_d36, by = c("day", "Treatment", "mesocosm")) 
   mutate(diatoms_chamber = coalesce(diatoms_chamber.y, diatoms_chamber.x), 
          # get count from both methods
          frag_count = coalesce(diatoms_chamber, diatoms_snake),
-         .keep = "unused") |> 
+         .keep = "unused"
+         ) |> 
   select(-diatoms_chamber)
 
 frag_meas <- read.csv("data/fragilaria_measurements.csv", header = T) |> 
@@ -79,23 +77,27 @@ gloe_diam <- read.csv("data/gloeotrichia_diameter_Karlsson.csv", header = T) |>
                          Date == "01/08/2000" ~ 28,
                          Date == "08/08/2000" ~ 36)) |> 
   group_by(day) |> 
-  summarise(gloe_vol = mean(gloe_vol))
+  summarise(gloe_vol = mean(gloe_vol)) |> 
+  ungroup() |> 
+  summarise_all(mean)
   
 
 
-erk_large_phyto <- frag_count |> 
-  left_join(gloe, by = c("day", "Treatment", "mesocosm", "sample_vol_ml")) |> 
-  left_join(volv, by = c("day", "Treatment", "mesocosm", "sample_vol_ml")) |> 
+erk_large_phyto <- gloe |> 
+  left_join(frag_count, by = c("day", "Treatment", "mesocosm")) |> 
+  # left_join(volv, by = c("day", "Treatment", "mesocosm", "sample_vol_ml")) |> 
   left_join(frag_meas, by = c("day", "Treatment", "mesocosm")) |> 
-  left_join(gloe_diam, by = "day") |> 
-  rename(gloe_count = gloeotrichia) |> 
+  # left_join(gloe_diam, by = "day") |> 
+  mutate(gloe_vol = gloe_diam$gloe_vol) |> 
+  rename(gloe_count = gloeotrichia,
+         sample_vol_ml = sample_vol_ml.x) |> 
   # calculate abundance (colonies per mL) and biovolume (um3 per mL)
   mutate(frag_abund = frag_count/(sample_vol_ml),
          frag_biovol = frag_abund * frag_vol,
          gloe_abund = gloe_count/(sample_vol_ml),
          gloe_biovol = gloe_abund * gloe_vol,
-         .keep = "unused") |>
-  select(-volvox)
+         .keep = "unused") |> 
+  select(-sample_vol_ml.y)
 
 
 
