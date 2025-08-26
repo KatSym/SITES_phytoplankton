@@ -7,6 +7,18 @@ library(modelr)
 
 load("./data/sites_FC_phyto.RData")
 
+# for plots
+trt.cols <- c(`C`= "#000000", #black - C
+              `D`= "#0a8754", #g - D
+              `I`= "#4472ca", #blu - I
+              `E`= "#e84855") 
+
+fil.cols <- c(`C`= "#00000030", #black - C
+              `D`= "#0a875430", #g - D
+              `I`= "#4472ca30", #blu - I
+              `E`= "#e8485530") 
+
+
 # ----- Erken ------
 functional.erk <- read.csv("./data/Erken_functional.csv", header = T, sep = ",")
 
@@ -18,6 +30,10 @@ large_phyto <- read.csv("data/Erken_large_phyto.csv") |>
   rename(ExpDay = day,
          dens = abund,
          biovoldens = biovol)
+
+small_phyto <- read.csv("data/WRONG_small_phyto.csv") |> 
+  rename(dens = abund,
+         biovoldens = biovolume)
 
 # taxon level data
 edat_tax <- erk.dat  |>  
@@ -59,6 +75,7 @@ edat_tax <- erk.dat  |>
          fun_grp = case_when(label == "FILAMENTS" ~ "III",
                              label == "ChlGolrad_2641100" ~ "I",
                              label == "CyaPla000_3218374" ~ "III",
+                             label == "ZygSta000_2647648" ~ "IV",
                              class == "Bac" ~ "VI",
                              .default = KRUK_MBFG)) |> 
   select(-taxon, -KRUK_MBFG) |> 
@@ -89,7 +106,10 @@ edat_fgroup = edat_tax |>
          # ExpDay = as.factor(ExpDay),
          fun_grp = as.factor(fun_grp)) |> 
   ungroup() |> 
+  # add large phytoplankton
   full_join(large_phyto, by = c("ExpDay", "Treatment", "mesocosm", "fun_grp")) |> 
+  # add small phytoplankton
+  full_join(small_phyto, by = c("ExpDay", "Treatment", "mesocosm", "fun_grp")) |> 
   group_by(ExpDay, Treatment, mesocosm, fun_grp) |> 
   summarise(dens = sum(dens.x, dens.y, na.rm = T),
             biovoldens = sum(biovoldens.x, biovoldens.y,  na.rm = T)) |> 
@@ -97,7 +117,9 @@ edat_fgroup = edat_tax |>
   mutate(Treatment = factor(Treatment, levels = c("C", "D", "I", "E")),
          fun_grp = factor(fun_grp, 
                           levels = c("I", "II", "III", "IV", "V", "VI", "VII", "Gloe")),
-         across(biovoldens,  ~replace(.x, .x == 0 & ExpDay == 36, NA)))
+         # replace 0s with NAs - model doesn't run otherwise
+         across(biovoldens,  ~replace(.x, .x == 0, NA))
+         )
   
 ## ---- models ----
 ### total biovolume ####
@@ -158,19 +180,20 @@ mgroup.e = brm(
   iter = 6000,
   warmup = 3000,
   cores = 4,
-  control = list(adapt_delta = 0.99,
-                 max_treedepth = 12
+  control = list(adapt_delta = 0.99
+                 # max_treedepth = 12
                  ),
   seed = 543,
   backend = "cmdstanr",
   data = edat_fgroup) # 79 min
+beepr::beep(1)
 
-saveRDS(mgroup, "models/Erk_mfgroup_fcdat.rds")
+saveRDS(mgroup.e, "models/Erk_mfgroup_fcdat_wrong-small.rds")
 mgroup.e <- readRDS("models/Erk_mfgroup_fcdat.rds")
-# mgroup.e <- readRDS("mgroup6000_fcdat.RDS")
+# mgroup.e <- readRDS("models/Erk_mfgroup_fcdat.rds")
 
 pp_check(mgroup.e, ndraws = 100)
-summary(mgroup) 
+summary(mgroup.e) 
 
 # default_prior(bf(
 #   log10(biovoldens) ~ s(ExpDay, by = interaction(fun_grp, Treatment), k = 5) +
@@ -212,7 +235,7 @@ unique(edat_fgroup[,1:4])  |>
 
 efgroup.pred <- edat_fgroup |> 
   data_grid(Treatment = unique(edat_fgroup$Treatment),
-            ExpDay = seq_range(edat_fgroup$ExpDay, n = 25),
+            ExpDay = seq_range(edat_fgroup$ExpDay, n = 20),
             fun_grp = unique(edat_fgroup$fun_grp),
             mesocosm = unique(edat_fgroup$mesocosm)) |> 
   add_epred_draws(mgroup.e, re_formula = NULL) %>% 
@@ -237,19 +260,25 @@ efgroup.pred <- edat_fgroup |>
                     linewidth = .7
     )+
     facet_wrap(~ fun_grp
-               , scales = "free_y"
+               , scales = "free_y",
+               nrow = 4, ncol = 2
     )+
-    scale_color_manual(values = c("#000000",
-                                  "#457661",
-                                  "#5e8fcd",
-                                  "#e79f4f")) +
-    scale_fill_manual(values = c("#00000030",
-                                 "#45766130",
-                                 "#5e8fcd30",
-                                 "#e79f4f30"))+
+    # scale_color_manual(values = c("#000000",
+    #                               "#457661",
+    #                               "#5e8fcd",
+    #                               "#e79f4f")) +
+    # scale_fill_manual(values = c("#00000030",
+    #                              "#45766130",
+    #                              "#5e8fcd30",
+    #                              "#e79f4f30"))+
+    scale_color_manual(values = trt.cols) +
+    scale_fill_manual(values = fil.cols)+
     labs(y = expression(log(mu*m^3/mL)),
          x = "Experimental day")+
-    theme_bw())
+    theme_bw() + 
+    theme(strip.text = element_text(face="bold")))
+
+
 
 
 # treatment - control differences
@@ -265,8 +294,8 @@ mgroup.e |> emmeans("Treatment", by = c("ExpDay", "fun_grp"),
   scale_fill_manual(values = c(
     # "#00000030",
                                "#45766150",
-                               "#e79f4f50",
-                               "#5e8fcd50"
+                               "#5e8fcd50",
+                               "#e79f4f50"
                                ), guide = F) +
   scale_x_continuous(breaks = c(0,4,12,20,28,36)) +
   ylab("Difference") +
@@ -332,8 +361,10 @@ edat_comp <- edat_fgroup |>
     tot_biov = rowSums(across(c(I,II,III,IV,V,VI,VII, Gloe)), na.rm = T),
     across(c(I, II, III, IV,V,VI, VII, Gloe),
            ~ . / tot_biov)) %>% 
-    mutate(V = replace_na(V, 1e-06),
-    Gloe = replace_na(Gloe, 1e-06)) %>% 
+    mutate(V = ifelse(V == 0, 1e-06, V),
+    # Gloe = replace_na(Gloe, 1e-06),
+    V = replace_na(V, 1e-06)
+    ) %>% 
   mutate(tot_biov = rowSums(across(c(I,II,III,IV,V,VI,VII, Gloe)), na.rm = T),
          across(c(I, II, III, IV,V,VI, VII, Gloe),
                 ~ . / tot_biov) )
@@ -357,11 +388,10 @@ mcomp = brm(
   backend = "cmdstanr",
   data = edat_comp
 ) # 35 min
-pp_check(mcomp.e, ndraws = 100)
 summary(mcomp)
 
- saveRDS(mcomp, "models/Erk_funct-comp_all.rds") # 36 min
-
+ saveRDS(mcomp, "models/Erk_funct-comp_wrong-small.rds") # 36 min
+ mcomp.e <- readRDS("models/Erk_funct-comp_wrong-small.rds")
 mcomp.e <- readRDS("models/Erk_funct-comp_all1.rds")
 
 conditional_effects(mcomp.e, effects = "ExpDay",
@@ -371,7 +401,7 @@ conditional_effects(mcomp.e, effects = "ExpDay",
 
 
 edat_comp_plt <- edat_comp |> 
-  pivot_longer(c(I, II, III, IV, V, VI, VII), 
+  pivot_longer(c(I, II, III, IV, V, VI, VII, Gloe), 
                names_to = "fun_grp", 
                values_to = "perc") |> 
   select(-Y) |> 
@@ -381,7 +411,7 @@ edat_comp_plt <- edat_comp |>
 
 comp.pred <- edat_comp_plt |>  
   data_grid(Treatment = unique(edat_comp$Treatment),
-            ExpDay = seq_range(edat_comp$ExpDay, n = 25),
+            ExpDay = seq_range(edat_comp$ExpDay, n = 20),
             mesocosm = unique(edat_comp$mesocosm)) |> 
   add_epred_draws(mcomp.e, re_formula = NULL) |> 
   rename(fun_grp = .category) |> 
@@ -391,31 +421,38 @@ comp.pred <- edat_comp_plt |>
 (plot <- comp.pred %>%
     ggplot(aes(x = ExpDay,
                y = .epred,
-               colour = Treatment)
+               colour = fun_grp)
     ) +
     stat_lineribbon(aes(y = (.epred),
-                        fill = Treatment),
+                        fill = fun_grp),
                     .width = c(0.95),
                     alpha = .5
                     # position = position_dodge(.5),
                     # linewidth = 2
     )+
     geom_point(edat_comp_plt, mapping = aes(x = ExpDay,
-                                   y = perc,
-                                   colour = Treatment),
+                                            y = perc,
+                                            colour = fun_grp),
                alpha = .35,
                position = position_jitterdodge(dodge.width = .5),
     ) +
-    facet_wrap(~ fun_grp
-               , scales = "free_y"
+    facet_wrap(~ Treatment,
+               scales = "free_y",
+               nrow = 1,
+               labeller = labeller(Treatment = c("C" = "Control", 
+                                                 "D" = "Daily", 
+                                                 "I" = "Intermittent", 
+                                                 "E" = "Extreme"))
     )+
-    # ggokabeito::scale_fill_okabe_ito() + 
-    # ggokabeito::scale_color_okabe_ito() +
-    scale_color_manual(values = trt.cols) +
-    scale_fill_manual(values = fil.cols) +
-labs(y = "Biovolume %",
-     x = "Experimental day")+
-    theme_bw())
+    ggokabeito::scale_fill_okabe_ito(name = "Functional groups") +
+    ggokabeito::scale_color_okabe_ito(guide = F) +
+    # scale_color_manual(values = trt.cols) +
+    # scale_fill_manual(values = fil.cols) +
+    labs(y = "Biovolume %",
+         x = "Experimental day")+
+    theme_bw() +
+    theme(strip.text = element_text(face="bold"))
+)
 
 comp_contrasts.e <- comp.pred |> 
   filter(ExpDay %in% unique(edat_comp$ExpDay)) |> 
@@ -620,10 +657,10 @@ unique(bdat_fgroup[,1:4])  |>
              vars(fun_grp))
 
 bfgroup.pred <- bdat_fgroup |> 
-  data_grid(Treatment = unique(edat_fgroup$Treatment),
-            ExpDay = seq_range(edat_fgroup$ExpDay, n = 37),
-            fun_grp = unique(edat_fgroup$fun_grp),
-            mesocosm = unique(edat_fgroup$mesocosm)) |> 
+  data_grid(Treatment = unique(bdat_fgroup$Treatment),
+            ExpDay = seq_range(bdat_fgroup$ExpDay, n = 20),
+            fun_grp = unique(bdat_fgroup$fun_grp),
+            mesocosm = unique(bdat_fgroup$mesocosm)) |> 
   add_epred_draws(mgroup.b, re_formula = NULL) 
 
 
@@ -645,22 +682,26 @@ bfgroup.pred <- bdat_fgroup |>
                     .width = c(0.95),
                     # alpha = .5
                     # position = position_dodge(.5),
-                    linewidth = .5
+                    linewidth = .7
     )+
     facet_wrap(~ fun_grp
-               , scales = "free_y"
+               , scales = "free_y",
+               ncol = 2
     )+
-    scale_color_manual(values = c("#000000",
-                                  "#457661",
-                                  "#5e8fcd",
-                                  "#e79f4f")) +
-    scale_fill_manual(values = c("#00000030",
-      "#45766130",
-      "#5e8fcd30",
-      "#e79f4f30"))+
+    # scale_color_manual(values = c("#000000",
+    #                               "#457661",
+    #                               "#5e8fcd",
+    #                               "#e79f4f")) +
+    # scale_fill_manual(values = c("#00000030",
+    #   "#45766130",
+    #   "#5e8fcd30",
+    #   "#e79f4f30"))+
+    scale_color_manual(values = trt.cols) +
+    scale_fill_manual(values = fil.cols)+
     labs(y = expression(log(mu*m^3/mL)),
          x = "Experimental day")+
-    theme_bw())
+    theme_bw() + 
+    theme(strip.text = element_text(face="bold")))
 
 
 mgroup.b |> emmeans("Treatment", by = c("ExpDay", "fun_grp"),
@@ -765,7 +806,6 @@ mcomp = brm(
   backend = "cmdstanr",
   data = bdat_comp
 ) # 35 min
-pp_check(mcomp, ndraws = 100)
 summary(mcomp.b)
 
 saveRDS(mcomp, "models/Bol_funct-comp_all1.rds") # 26 min
@@ -790,7 +830,7 @@ bdat_comp_plt <- bdat_comp |>
 
 compb.pred <- bdat_comp_plt |>  
   data_grid(Treatment = unique(bdat_comp$Treatment),
-            ExpDay = seq_range(bdat_comp$ExpDay, n = 25),
+            ExpDay = seq_range(bdat_comp$ExpDay, n = 20),
             mesocosm = unique(bdat_comp$mesocosm)) |> 
   add_epred_draws(mcomp.b, re_formula = NULL) 
 
@@ -815,13 +855,19 @@ compb.pred <- bdat_comp_plt |>
                position = position_jitterdodge(dodge.width = .5),
     ) +
     facet_wrap(~ Treatment
-               , scales = "free_y"
+               , scales = "free_y",
+               nrow = 1,
+               labeller = labeller(Treatment = c("C" = "Control", 
+                                                 "D" = "Daily", 
+                                                 "I" = "Intermittent", 
+                                                 "E" = "Extreme"))
     )+
     ggokabeito::scale_fill_okabe_ito() + 
     ggokabeito::scale_color_okabe_ito() +
     labs(y = "Biovolume %",
          x = "Experimental day")+
-    theme_bw())
+    theme_bw()+
+    theme(strip.text = element_text(face="bold")))
 
 
 comp_contrasts.b <- compb.pred |> 
