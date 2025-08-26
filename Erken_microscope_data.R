@@ -1,3 +1,5 @@
+library(tidyverse)
+
 comcomp <- read.csv("data/comm_comp_GAL.csv", header = T,
                     skip = 5) %>% 
   # some "data cleaning" to match my other data structures
@@ -7,7 +9,7 @@ comcomp <- read.csv("data/comm_comp_GAL.csv", header = T,
                             samplDay == 5 ~ 20,
                             samplDay == 9 ~ 36), .keep = "unused") %>% 
   separate(Sample_ID, c("mesocosm", "blah"), "_") %>% 
-  mutate(Treatment = substring(mesocosm, 1, 1)) %>% 
+  mutate(Treatment = substring(blah, 1, 1)) %>% 
   # abundance calculation - cells/mL
   mutate(abund = ((Counts*Utt_Area)/(No_LF*fov))/sed_volume) %>% # in cells/mL
   select(ExpDay, Treatment, mesocosm, Species, abund) %>% 
@@ -18,6 +20,7 @@ comcomp <- read.csv("data/comm_comp_GAL.csv", header = T,
                         "Quadrigula", "Rhodomonas sp", "Paulschulzsia", "Quadrigula", "Snowella", "Stauridium", 
                         "Stephanodiscus", "Tetraedron")) %>% 
   mutate(size_fract = "small",
+         # add label column to match with the flowcam data
          label = case_when(Species == "Ankistrodesmus" ~ "ChlAnk000_9516573",
                            Species == "Ankyra" ~ "ChlAnkjud_2642105",
                            Species == "Chlamydomonas" ~ "ChlChl000_5271004",
@@ -48,37 +51,53 @@ comcomp <- read.csv("data/comm_comp_GAL.csv", header = T,
                            Species == "Stephanodiscus" ~ "BacSte000_3193250",
                            Species == "Tetraedron" ~ "ChlTet000_2672378"),
          
+         # correct species to match with other datasets
+         Species = case_when(Species == "Ankyra" ~ "Ankyra judayi",
+                             Species == "Chlorella" ~ "Eudorina",
+                             Species == "Heliozoa" ~ "Golenkinia radiata",
+                             Species == "Chlorophyceae" ~ "Sphaerocystis",
+                             Species == "Circle" ~ "Cyclotella",
+                             Species == "Comasiella" ~ "Scenedesmus arcuatus",
+                             Species == "Elakatothrix" ~ "Elakatothrix gelatinosa",
+                             Species == "Ochromonas" ~ "Cryptomonas",
+                             Species == "Phaester" ~ "Chrysochromulina",
+                             Species == "Rhodomonas sp" ~ "Rhodomonas",
+                             Species == "Paulschulzsia" ~ "Sphaerocystis",
+                             .default = Species),
+         
          fun_grp = case_when(Species == "Ankistrodesmus" ~ "IV",
-                             Species == "Ankyra" ~ "IV",
-                             Species == "Chlamydomonas" ~ "",
-                             Species == "Chlorella" ~ "VII",
-                             Species == "Heliozoa" ~ "IV",
-                             Species == "Chlorophyceae" ~ "I",
-                             Species == "Chroomonas" ~ "",
-                             Species == "Circle" ~ "VI",
+                             Species == "Ankyra judayi" ~ "IV",
+                             Species == "Chlamydomonas" ~ "I",
+                             Species == "Eudorina" ~ "VII",
+                             Species == "Golenkinia radiata" ~ "IV",
+                             Species == "Sphaerocystis" ~ "I",
+                             Species == "Chroomonas" ~ "I",
+                             Species == "Cyclotella" ~ "VI",
                              Species == "Coelastrum" ~ "IV",
-                             Species == "Comasiella" ~ "IV",
+                             Species == "Scenedesmus arcuatus" ~ "IV",
                              Species == "Cosmarium" ~ "IV",
                              Species == "Cryptomonas" ~ "V",
-                             Species == "Elakatothrix" ~ "IV",
-                             Species == "Kirchneriella" ~ "",
+                             Species == "Elakatothrix gelatinosa" ~ "IV",
+                             Species == "Kirchneriella" ~ "IV",
                              Species == "Desmodesmus" ~ "IV",
                              Species == "Gloeocapsa" ~ "VII",
                              Species == "Koliella" ~ "IV",
                              Species == "Monoraphidium" ~ "IV",
                              Species == "Ochromonas" ~ "V",
-                             Species == "Oocystis" ~ "",
-                             Species == "Phaester" ~ "",
+                             Species == "Oocystis" ~ "IV",
+                             Species == "Chrysochromulina" ~ "I",
                              Species == "Merismopedia" ~ "I",
-                             Species == "Rhodomonas sp" ~ "",
+                             Species == "Rhodomonas" ~ "I",
                              Species == "Paulschulzsia" ~ "I",
                              Species == "Quadrigula" ~ "IV",
                              Species == "Snowella" ~ "I",
                              Species == "Stauridium" ~ "IV",
                              Species == "Stephanodiscus" ~ "VI",
-                             Species == "Tetraedron" ~ "IV"))
+                             Species == "Tetraedron" ~ "IV")) |> 
+  separate(Species, " ", into = c("Genus", "sp"), remove = F) |> 
+  select(-sp)
 
-
+# THESE ARE CELL VOLUMES
 vols <- read.csv("data/Erken_small_phyto_vol.csv") |> 
   filter(!Minstorlek %in% c(15, 20, 25)) |> 
   mutate(biovol_um = Biovolym..mm3.l.*1e9,
@@ -87,3 +106,28 @@ vols <- read.csv("data/Erken_small_phyto_vol.csv") |>
   group_by(taxon) |> 
   # mean of 2 sampling in beginning of July for 3 years
   summarise(cellvol = mean(cell_vol))
+
+
+nomp_vols <- read.csv("data/nomp_subset.csv", header = T, check.names = F) |> 
+  select(-`Calculated_volume_\xb5m3/counting_unit`) |> 
+  rename(vol = `Calculated_volume_\xb5m3 (with formula) - NOT IMPORTED, NOT handled by ICES`) |> 
+  group_by(Genus) |>
+  summarise_all(mean) |> 
+  select(Genus, vol) |> 
+  ungroup()
+  # readxl::read_xlsx("data/bvol_nomp_version_2024.xlsx", 
+  #                              sheet = 1, range = "A1:AM3847") |> 
+  # discard(~all(is.na(.))) |> 
+  # filter(Genus %in% comcomp$Genus,
+  #        Species %in% comcomp$Species) |> 
+  # select(-contains(c("AphiaID", "Length", "Height", "Carbon", "Diameter", "Width", "Synonyms" )),
+  #        -c(List, `HELCOM area`, Division, Class, Order, Author, `WORMS Rank`, Trophy)) |> 
+  # filter(!(Genus %in% c("Merismopedia", "Snowella", "Elakatothrix") & Unit == "cell")) |> 
+  # group_by(Species) |> 
+  # summarise_all(mean)
+
+small_phyto <- comcomp |> 
+  left_join(nomp_vols, by = "Genus") |> 
+  mutate(biovolume = abund*vol)
+
+write.csv(small_phyto, "data/WRONG_small_phyto.csv", row.names = F, quote = F)
