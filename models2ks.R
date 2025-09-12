@@ -35,10 +35,10 @@ large_phyto <- read.csv("data/Erken_large_phyto.csv") |>
          dens = abund,
          biovoldens = biovol)
 
-small_phyto <- read.csv("data/WRONG_small_phyto.csv") |> 
+small_phyto <- read.csv("data/WRONG_small_phyto2.csv") |> 
   rename(dens = abund,
          biovoldens = biovolume) %>% 
-  select(-c(Species, Genus, size_fract, vol))
+  select(-c(Species, Genus, size_fract))
 
 # taxon level data
 edat_tax <- erk.dat  |>  
@@ -226,7 +226,7 @@ mgroup.e = brm(
   data = edat_fgroup) # 79 min
 beepr::beep(1)
 
-saveRDS(mgroup.e, "models/Erk_mfgroup_fcdat_wrong-small.rds")
+saveRDS(mgroup.e, "models/Erk_mfgroup_fcdat_wrong-small2.rds")
 mgroup.e <- readRDS("models/Erk_mfgroup_fcdat_wrong-small.rds")
 # mgroup.e <- readRDS("models/Erk_mfgroup_fcdat.rds")
 
@@ -401,7 +401,9 @@ edat_comp <- edat_fgroup |>
            ~ . / tot_biov)) %>% 
     mutate(V = ifelse(V == 0, 1e-06, V),
     # Gloe = replace_na(Gloe, 1e-06),
-    V = replace_na(V, 1e-06)
+    V = replace_na(V, 1e-06),
+    VI = replace_na(VI, 1e-06),
+    VII = replace_na(VII, 1e-06)
     ) %>% 
   mutate(tot_biov = rowSums(across(c(I,II,III,IV,V,VI,VII, VIII)), na.rm = T),
          across(c(I, II, III, IV,V,VI, VII, VIII),
@@ -409,7 +411,7 @@ edat_comp <- edat_fgroup |>
               
 
 # make a 'list' column with all percentages
-edat_comp$Y = with(edat_comp, cbind(I,II,III,IV,V,VI,VII, Gloe))
+edat_comp$Y = with(edat_comp, cbind(I,II,III,IV,V,VI,VII, VIII))
 
 mcomp = brm(
   bf(
@@ -428,8 +430,8 @@ mcomp = brm(
 ) # 35 min
 summary(mcomp)
 
- saveRDS(mcomp, "models/Erk_funct-comp_wrong-small.rds") # 36 min
- mcomp.e <- readRDS("models/Erk_funct-comp_wrong-small.rds")
+ saveRDS(mcomp, "models/Erk_funct-comp_wrong-small2.rds") # 36 min
+ mcomp.e <- readRDS("models/Erk_funct-comp_wrong-small2.rds")
 mcomp.e <- readRDS("models/Erk_funct-comp_all1.rds")
 
 conditional_effects(mcomp.e, effects = "ExpDay",
@@ -439,7 +441,7 @@ conditional_effects(mcomp.e, effects = "ExpDay",
 
 
 edat_comp_plt <- edat_comp |> 
-  pivot_longer(c(I, II, III, IV, V, VI, VII, Gloe), 
+  pivot_longer(c(I, II, III, IV, V, VI, VII, VIII), 
                names_to = "fun_grp", 
                values_to = "perc") |> 
   select(-Y) |> 
@@ -536,12 +538,11 @@ comp_contrasts.e |>
 functional.bol <- read.csv("./data/Bolmen_functional.csv", header = T, sep = ",")
 
 
-bol_small <- read.csv("data/bolmen_counts.csv") |> 
-  select(Species, Day, Mesocosm, Treatment, cell_abundanceperml, totalbvperml) |> 
+bol_small <- read.csv("data/Bolmen_microscope_counts.csv") |> 
   rename(ExpDay = Day,
          mesocosm = Mesocosm, 
-         dens = cell_abundanceperml,
-         biovoldens = totalbvperml) |> 
+         dens = abundance,
+         biovoldens = biovolume) |> 
   mutate(fun_grp = case_when(Species == "Aphanocapsa" ~ "VII",
                            Species == "Aphanothece" ~ "VII",
                            Species == "Asteroccoccus" ~ "I",
@@ -551,7 +552,7 @@ bol_small <- read.csv("data/bolmen_counts.csv") |>
                            Species == "Chrysochromulina parva" ~ "I",
                            Species == "Closterium" ~ "IV",
                            Species == "Coelastrum" ~ "IV",
-                           Species == "Coenochloris sp " ~ "I",#
+                           Species == "Coenochloris sp" ~ "I",#
                            Species == "Cosmarium" ~ "IV",
                            Species == "Cosmarium bioculatum" ~ "IV",
                            Species == "Cosmarium crenatum" ~ "IV",
@@ -587,7 +588,7 @@ bol_small <- read.csv("data/bolmen_counts.csv") |>
                            Species == "Pseudanabaena" ~ "III",
                            Species == "Rhodomonas" ~ "I",
                            Species == "Scenedesmus" ~ "IV",#
-                           Species == "Selenastrum " ~ "I",
+                           Species == "Selenastrum" ~ "I",
                            Species == "Selenastrum bibraianum" ~ "I",#
                            Species == "Small dinoflagellate" ~ "V",#
                            Species == "Synedra" ~ "VI",
@@ -603,7 +604,7 @@ bol_small <- read.csv("data/bolmen_counts.csv") |>
                            Species == "Chrysochromulina parva" ~ "PryChrpar_3202214",# 
                            Species == "Closterium" ~ "ZygClo000_2646356",
                            Species == "Coelastrum" ~ "ChlCoe000_7749802",
-                           Species == "Coenochloris sp " ~ "ChlCoe000_2641720",#
+                           Species == "Coenochloris sp" ~ "ChlCoe000_2641720",#
                            Species == "Cosmarium" ~ "ZygCos000_2648709",
                            Species == "Cosmarium bioculatum" ~ "ZygCosbio_5274000",
                            Species == "Cosmarium crenatum" ~ "ZygCoscre_0000000",#
@@ -639,7 +640,7 @@ bol_small <- read.csv("data/bolmen_counts.csv") |>
                            Species == "Pseudanabaena" ~ "CyaPse000_3218042",#
                            Species == "Rhodomonas" ~ "CryRho000_3202546",
                            Species == "Scenedesmus" ~ "ChlSyn000_2640664",#
-                           Species == "Selenastrum " ~ "ChlSel000_0000000",
+                           Species == "Selenastrum" ~ "ChlSel000_0000000",
                            Species == "Selenastrum bibraianum" ~ "ChlSelbib_2641190",#
                            Species == "Small dinoflagellate" ~ "Din000000_0000000",#
                            Species == "Synedra" ~ "BacSyn000_3192703",
@@ -648,7 +649,6 @@ bol_small <- read.csv("data/bolmen_counts.csv") |>
          ),
          .keep = "unused"
          )
-
 
 # taxon level data
 bdat_tax <- bol.dat  |>  
@@ -684,25 +684,16 @@ bdat_tax <- bol.dat  |>
          .keep = "unused") %>% 
   ungroup() |> 
   left_join(functional.bol, by = "label") |>
+  mutate(fun_grp = ifelse(label == "CyaDollem_7901634", "VIII", fun_grp)) |> 
   drop_na() |> 
   select(-taxonvol, -class)
 
-
+# combine large and small
 bdat_tax <- bdat_tax %>% 
   rbind(bol_small) %>% 
   group_by(ExpDay, Treatment, mesocosm, fun_grp, label) |>
   summarise(dens = sum(dens),
             biovoldens = sum(biovoldens)) %>%  # cubic micrometers
-  ungroup()
-
-
-
-# community level data
-bdat_tot = bdat_tax |> 
-  group_by(ExpDay, Treatment, mesocosm) |> 
-  summarise(dens = sum(dens),
-         biovoldens = sum(biovoldens, na.rm = T) # cubic micro per mL
-  ) |> 
   ungroup()
 
 
@@ -715,8 +706,18 @@ bdat_fgroup = bdat_tax |>
   ungroup() |> 
   mutate(Treatment = factor(Treatment, levels = c("C", "D", "I", "E")),
          fun_grp = factor(fun_grp, 
-                          levels = c("I", "II", "III", "IV", "V", "VI", "VII"))
+                          levels = c("I", "II", "III", "IV", "V", "VI", "VII", "VIII"))
   )
+
+
+# community level data
+bdat_tot = bdat_tax |> 
+  group_by(ExpDay, Treatment, mesocosm) |> 
+  summarise(dens = sum(dens),
+         biovoldens = sum(biovoldens, na.rm = T) # cubic micro per mL
+  ) |> 
+  ungroup() 
+
 
 ## ---- models ----
 ### total biovolume ####
@@ -765,7 +766,6 @@ mtot |> emmeans("Treatment", by = "ExpDay",
 
 ### functional group biovolume ####
 
-
 mgroup = brm(
   bf(
     log10(biovoldens) ~ fun_grp*Treatment +
@@ -792,7 +792,7 @@ mgroup = brm(
 saveRDS(mgroup, "models/Bol_mgroup_fcdat.rds")
 mgroup.b = readRDS("models/Bol_mgroup_fcdat.rds")
 pp_check(mgroup.b, ndraws = 100)
-summary(mgroup.b) 
+summary(mgroup) 
 
 
 # default_prior(bf(
