@@ -249,7 +249,7 @@ unique(edat_fgroup[,1:4])  |>
   ungroup() %>% 
   mutate(Treatment = factor(Treatment, levels = c("C", "D", "I", "E")),
          fun_grp - factor(fun_grp, 
-                          levels = c("I", "II", "III", "IV", "V", "VI", "VII", "Gloe"))) |>
+                          levels = c("I", "II", "III", "IV", "V", "VI", "VII", "VIII"))) |>
   ggplot(aes(x = ExpDay, y = log10(biovoldens), fill = Treatment)) +
   stat_lineribbon(aes(y = .epred), .width = c(0.95), #alpha = .5,
                   point_interval = "mean_qi",
@@ -271,13 +271,17 @@ unique(edat_fgroup[,1:4])  |>
              vars(fun_grp))
 
 
-efgroup.pred <- edat_fgroup |> 
-  data_grid(Treatment = unique(edat_fgroup$Treatment),
-            ExpDay = seq_range(edat_fgroup$ExpDay, n = 20),
-            fun_grp = unique(edat_fgroup$fun_grp),
-            mesocosm = unique(edat_fgroup$mesocosm)) |> 
-  add_epred_draws(mgroup.e, re_formula = NULL) %>% 
-  ungroup()
+# create mapping for treatment - mesocosm pairs
+trt_mes <- tibble(Treatment = rep(c("C", "D", "I", "E"), each = 4),
+                  mesocosm = c(1, 7, 10, 16,
+                               2, 8, 11, 13,
+                               3, 5, 12, 14,
+                               4, 6, 9, 15))
+
+efgroup.pred <- crossing(trt_mes,
+                         ExpDay = seq_range(edat_fgroup$ExpDay, n = 20),
+                         fun_grp = unique(edat_fgroup$fun_grp)) |> 
+  add_epred_draws(mgroup.e, re_formula = NULL)
 
 
 (plot1 <- edat_fgroup %>%
@@ -552,7 +556,7 @@ bol_small <- read.csv("data/Bolmen_microscope_counts.csv") |>
                            Species == "Chrysochromulina parva" ~ "I",
                            Species == "Closterium" ~ "IV",
                            Species == "Coelastrum" ~ "IV",
-                           Species == "Coenochloris sp" ~ "I",#
+                           Species == "Coenochloris" ~ "I",#
                            Species == "Cosmarium" ~ "IV",
                            Species == "Cosmarium bioculatum" ~ "IV",
                            Species == "Cosmarium crenatum" ~ "IV",
@@ -604,7 +608,7 @@ bol_small <- read.csv("data/Bolmen_microscope_counts.csv") |>
                            Species == "Chrysochromulina parva" ~ "PryChrpar_3202214",# 
                            Species == "Closterium" ~ "ZygClo000_2646356",
                            Species == "Coelastrum" ~ "ChlCoe000_7749802",
-                           Species == "Coenochloris sp" ~ "ChlCoe000_2641720",#
+                           Species == "Coenochloris" ~ "ChlCoe000_2641720",#
                            Species == "Cosmarium" ~ "ZygCos000_2648709",
                            Species == "Cosmarium bioculatum" ~ "ZygCosbio_5274000",
                            Species == "Cosmarium crenatum" ~ "ZygCoscre_0000000",#
@@ -647,8 +651,9 @@ bol_small <- read.csv("data/Bolmen_microscope_counts.csv") |>
                            Species == "Synura" ~ "ChrSyn000_0000000",
                            Species == "Trachelomonas" ~ "EugTra000_3208889"#
          ),
-         .keep = "unused"
-         )
+         # .keep = "unused"
+         ) |> 
+  select(-Species)
 
 # taxon level data
 bdat_tax <- bol.dat  |>  
@@ -763,7 +768,6 @@ mtot |> emmeans("Treatment", by = "ExpDay",
   facet_wrap(vars(contrast))
 
 
-
 ### functional group biovolume ####
 
 mgroup = brm(
@@ -826,13 +830,17 @@ unique(bdat_fgroup[,1:4])  |>
   facet_grid(vars(Treatment), 
              vars(fun_grp))
 
-bfgroup.pred <- bdat_fgroup |> 
-  data_grid(Treatment = unique(bdat_fgroup$Treatment),
-            ExpDay = seq_range(bdat_fgroup$ExpDay, n = 20),
-            fun_grp = unique(bdat_fgroup$fun_grp),
-            mesocosm = unique(bdat_fgroup$mesocosm)) |> 
-  add_epred_draws(mgroup.b, re_formula = NULL) 
+# create mapping for treatment - mesocosm pairs
+trt_mes <- tibble(Treatment = rep(c("C", "D", "I", "E"), each = 4),
+                  mesocosm = c(1, 7, 10, 16,
+                               2, 8, 11, 13,
+                               3, 5, 12, 14,
+                               4, 6, 9, 15))
 
+bfgroup.pred <- crossing(trt_mes,
+               ExpDay = seq_range(bdat_fgroup$ExpDay, n = 20),
+               fun_grp = unique(bdat_fgroup$fun_grp)) |> 
+  add_epred_draws(mgroup.b, re_formula = NULL)
 
 (plot2 <- bdat_fgroup %>%
     ggplot(aes(x = ExpDay,
@@ -936,31 +944,20 @@ bdat_comp <- bdat_fgroup |>
   select(ExpDay, Treatment, mesocosm, fun_grp, biovoldens) |> 
   pivot_wider(names_from = "fun_grp",
               values_from = "biovoldens") |> 
-  # select(-V) |> 
-  mutate(tot_biov = rowSums(across(c(I,II,III,IV,
-                                     V,
-                                     VI,VII)), na.rm = T),
-         across(c(I, II, III, IV, 
-                  V,
-                  VI, VII),
+  mutate(tot_biov = rowSums(across(c(I,II,III,IV, V, VI,VII, VIII)), na.rm = T),
+         across(c(I, II, III, IV, V, VI, VII, VIII),
                 ~ . / tot_biov),
          I = replace_na(I, 1e-06),
          II = replace_na(II, 1e-06),
-         V = replace_na(V, 1e-06),
          VII = replace_na(VII, 1e-06),
-         tot_biov = rowSums(across(c(I,II,III,IV,
-                                     V,
-                                     VI,VII)), na.rm = T),
-         across(c(I, II, III, IV, 
-                  V,
-                  VI, VII),
+         VIII = replace_na(VIII, 1e-06),
+         tot_biov = rowSums(across(c(I,II,III,IV, V, VI,VII, VIII)), na.rm = T),
+         across(c(I, II, III, IV, V, VI, VII, VIII),
                 ~ . / tot_biov)
   )
 
 # make a 'list' column with all percentages
-bdat_comp$Y = with(bdat_comp, cbind(I,II,III,IV,
-                                    V,
-                                    VI,VII))
+bdat_comp$Y = with(bdat_comp, cbind(I,II,III,IV,V,VI,VII, VIII))
 
 mcomp = brm(
   bf(
@@ -980,11 +977,16 @@ mcomp = brm(
 summary(mcomp.b)
 
 saveRDS(mcomp, "models/Bol_funct-comp_all.rds") # 26 min
-
-
 mcomp.b <- readRDS("models/Bol_funct-comp_all.rds")
 
-conditional_effects(mcomp.b, effects = "ExpDay",
+# make density overlay plots instead of pp_check
+library(bayesplot)
+yrep <- posterior_predict(mcomp.b, ndraws = 100)
+
+ppc_dens_overlay(y = bdat_comp$I, 
+                 yrep[ , 1:96, 1])
+
+conditional_effects(mcomp, effects = "ExpDay",
                     re_formula = NA,
                     conditions = data.frame(Treatment = c("C","D","I","E")),
                     categorical = T, points = T)
@@ -999,10 +1001,10 @@ bdat_comp_plt <- bdat_comp |>
   summarise(perc = sum(perc)) |> 
   ungroup()
 
-compb.pred <- bdat_comp_plt |>  
-  data_grid(Treatment = unique(bdat_comp$Treatment),
-            ExpDay = seq_range(bdat_comp$ExpDay, n = 20),
-            mesocosm = unique(bdat_comp$mesocosm)) |> 
+compb.pred <-  
+  crossing(trt_mes,
+           ExpDay = seq_range(bdat_fgroup$ExpDay, n = 20),
+           fun_grp = unique(bdat_fgroup$fun_grp)) |> 
   add_epred_draws(mcomp.b, re_formula = NULL) 
 
 
