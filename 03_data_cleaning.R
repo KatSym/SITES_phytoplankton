@@ -33,7 +33,7 @@ erk.dat <- erken %>%
   # filter out unwanted classes
   filter(!label %in% c(     "",
                             "detritus", 
-                            "CyaGlo000_filaments",
+                            # "CyaGlo000_filaments",
                             "CyaGloech_0000000",
                             "Mesozoo_0000000"
                           )) %>% 
@@ -88,7 +88,8 @@ bol.dat <- bolmen %>%
   mutate(biovolume = as.numeric(biovolume),
          surfacearea = as.numeric(surfacearea),
          ProbabilityScore = as.numeric(ProbabilityScore),
-         label = ifelse(LabelTrue %in% c(NA , "", "EVERYTHING"), LabelPredicted, LabelTrue)) %>% 
+         label = ifelse(LabelTrue %in% c(NA , "", "EVERYTHING"), LabelPredicted, LabelTrue),
+         .keep = "unused") %>% 
   # filter out unwanted classes
   filter(!label %in% c("detritus", 
                             "CyaGloech_0000000"
