@@ -24,7 +24,6 @@ edat_tax <- erk.dat %>%
          .keep = "unused") %>%
   group_by(ExpDay, Treatment, mesocosm, Name, label) %>%
   summarise(count = n(),
-            # average the two flowcam runs
             abd = mean(AbdDiameter),
             len = mean(Length),
             cellvol = mean(biovolMS), # cubic micrometers
@@ -32,6 +31,16 @@ edat_tax <- erk.dat %>%
             prob = mean(ProbabilityScore),
             vol.offset = mean(vol.offset) # mL
             ) %>% 
+  group_by(ExpDay, Treatment, mesocosm, label) %>%
+  summarise(count = mean(count),
+            # average the two flowcam runs
+            abd = mean(abd),
+            len = mean(len),
+            cellvol = mean(cellvol), # cubic micrometers
+            sa = mean(sa),
+            prob = mean(prob),
+            vol.offset = mean(vol.offset) # mL
+  ) %>%
   ungroup() %>% 
   left_join(., functional.erk, by = join_by(label == Code)) %>%
   mutate(class = substr(label, 1, 3),
@@ -39,7 +48,7 @@ edat_tax <- erk.dat %>%
                              label == "CyaPla000_3218374" ~ "III",
                              class == "Bac" ~ "VI",
                              .default = KRUK_MBFG)) %>% 
-  select(-label, -KRUK_MBFG, -Name) %>% 
+  select(-label, -KRUK_MBFG) %>% 
   drop_na() %>% 
   mutate(taxonvol = count*cellvol) 
 
@@ -222,15 +231,12 @@ mcomp1 = brm(
   backend = "cmdstanr",
   data = edat_comp
 ) 
-pp_check(mcomp, ndraws = 100)
-summary(mcomp)
-conditional_effects(mcomp, effects = "ExpDay",
-                    re_formula = NA,
+pp_check(mcomp1, ndraws = 100)
+summary(mcomp1)
+conditional_effects(mcomp1, effects = "ExpDay",
+                    re_formula = NULL,
                     conditions = data.frame(Treatment = c("C","D","I","E")),
                     categorical = T)
-
-
-
 
 mcomp = brm(
   bf(
@@ -253,14 +259,77 @@ mcomp = brm(
 pp_check(mcomp, ndraws = 100)
 summary(mcomp)
 
+
+
+edat_comp_plt <- edat_comp |> 
+  pivot_longer(c(I, II, III, IV, V, VI, VII), 
+               names_to = "fun_grp", 
+               values_to = "perc") |> 
+  select(-Y) |> 
+  group_by(ExpDay, Treatment, mesocosm, fun_grp) |> 
+  summarise(perc = sum(perc)) |> 
+  ungroup()
+
+comp.pred <- edat_comp_plt[,1:4] |>  
+  #data_grid(Treatment = unique(edat_comp$Treatment),
+  #          ExpDay = seq_range(edat_comp$ExpDay, n = 37)) |> 
+  add_predicted_draws(mcomp) |> 
+  rename(fun_grp = .category)
+
+
+pp = mcomp %>% predicted_draws(newdata = edat_comp[,c(1:3)],
+                               ndraws = 1000) %>% 
+  group_by(ExpDay, Treatment, mesocosm, .category) %>% 
+  summarise(n = n(),
+            mean = mean(.prediction),
+            sd = sd(.prediction),
+            se = sd/sqrt(n),
+            lower = mean - se*qnorm(0.975),
+            upper = mean + se*qnorm(0.975))
+
+
+
 edat_tax_comp = edat_tax %>% 
-  select(ExpDay, Treatment, mesocosm, fun_grp, taxon, taxonvol) %>% 
+  select(ExpDay, Treatment, mesocosm, taxon, taxonvol) %>% 
   pivot_wider(names_from = "taxon",
               values_from = "taxonvol") %>% 
-  mutate(tot_biov = rowSums(across(c(I,II,III,IV,V,VI,VII)), na.rm = T)) %>% 
-  mutate(across(c(I, II, III, IV, V, VI, VII),
+  mutate(tot_biov = rowSums(across(`Acanthoceras sp.`:`Cosmarium sp.`), na.rm = T)) %>% 
+  mutate(across(`Acanthoceras sp.`:`Cosmarium sp.`,
                 ~ . / tot_biov)) %>% 
-  mutate(V = replace_na(V, 1e-09)) %>% 
-  mutate(tot_biov = rowSums(across(c(I,II,III,IV,V,VI,VII)), na.rm = T)) %>% 
-  mutate(across(c(I, II, III, IV, V, VI, VII),
+  mutate(across(`Acanthoceras sp.`:`Cosmarium sp.`, 
+                ~ replace_na(., 1e-09))) %>% 
+  mutate(tot_biov = rowSums(across(`Acanthoceras sp.`:`Cosmarium sp.`), na.rm = T)) %>% 
+  mutate(across(`Acanthoceras sp.`:`Cosmarium sp.`,
                 ~ . / tot_biov))
+
+
+edat_tax_comp$Y = with(edat_tax_comp, cbind(`Acanthoceras sp.`            ,`Amphora sp.`                 ,`Asterionella formosa`       
+                                            ,`Aulacoseira sp.`             ,`Diatoma sp.`                 ,`Fragilaria crotonensis`     
+                                            ,`Navicula sp.`                ,`Stephanodiscus sp.`          ,`Synedra sp.`                
+                                            ,`Coelastrum sp.`              ,`Eudorina sp`                 ,`Pediastrum sp.`             
+                                            ,`Volvox sp.`                  ,`Chloro_colonies`             ,`Dinobryon sp.`              
+                                            ,`Mallomonas sp.`              ,`Aphanizomenon sp.`           ,`Coelosphaerium sp.`         
+                                            ,`Dolichospermum sp.`          ,`Dolichospermum lemmermannii` ,`Gloeocapsa sp.`             
+                                            ,`Microcystis sp.`             ,`Woronichinia`                ,`Ceratium hirundinella`      
+                                            ,`Dictyospaerium sp.`          ,`Closterium aciculare`        ,`Closterium acutum`          
+                                            ,`Cosmarium sp.`))
+
+
+
+mcomp = brm(
+  bf(
+    Y ~ Treatment + s(ExpDay, by = Treatment, k = 5) +
+      (ExpDay | mesocosm)
+  ),
+  family = logistic_normal(),
+  prior = prior("lkj(5)", "lncor"),
+  init = 0,
+  chains = 3,
+  iter = 6000,
+  warmup = 3000,
+  cores = 3,
+  control = list(adapt_delta = 0.95),
+  seed = 42,
+  backend = "cmdstanr", 
+  data = edat_tax_comp
+) 
