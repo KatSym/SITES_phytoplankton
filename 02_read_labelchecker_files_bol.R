@@ -8,7 +8,7 @@ file.names.training  <- list.files(path ="C:/Users/symiakaki/Desktop/fc/bolmen_d
 #                           pattern = "LabelChecker", 
 #                           full.names = T, recursive=T) 
 
-file.names.all  <- list.files(path ="C:/Users/symiakaki/Desktop/fc/bolmen_LCs_20250625-all/", 
+file.names.all  <- list.files(path ="C:/Users/symiakaki/Desktop/fc/bolmen_LCs_20250923-all/", 
                               pattern = "LabelChecker", 
                               full.names = T, recursive=T) 
 
@@ -105,7 +105,7 @@ all.data <- result.table.all %>%
 sort(unique(all.data$LabelTrue))
 length(unique(all.data$Name))
 
-saveRDS(all.data, file = "./data/Bolmen_FCphyto_20250630-biovol.rds")
+saveRDS(all.data, file = "./data/Bolmen_FCphyto_20250926.rds")
 
 
 
@@ -114,4 +114,4 @@ result.table.all %>% filter(LabelTrue == "CHLORO_Coelastrum") %>%
   pull(LabelPredicted)
   
   
-result.table.all$Name[result.table.all$LabelTrue== "prob_gloeo_strand"]
+unique(result.table.all$Name[result.table.all$LabelTrue== "prob_gloeo_strand"])

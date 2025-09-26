@@ -72,7 +72,7 @@ erk.dat <- erken %>%
 
 # BOLMEN -----
 ## load data ----
-bolmen <- readRDS("./data/Bolmen_FCphyto_20250630-biovol.rds") 
+bolmen <- readRDS("./data/Bolmen_FCphyto_20250926.rds") 
 
 metadata.bol <- read.csv("./data/Metadata_Bolmen.csv", 
                          header=T, sep=",") %>% 
@@ -121,4 +121,4 @@ bol.dat <- bolmen %>%
   left_join(., metadata.bol, by = join_by(Name == ID)) %>% 
   select(-c(mes, day, concentr_vol))
 
-save(erk.dat, bol.dat, file = "./data/sites_FC_phyto.RData")
+save(erk.dat, bol.dat, file = "./data/sites_FC_phyto_0925.RData")
