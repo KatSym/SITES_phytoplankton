@@ -45,7 +45,8 @@ large_phyto <- read.csv("data/Erken_large_phyto.csv") |>
 small_phyto <- read.csv("data/Erken_small_phyto.csv") |> 
   rename(dens = abund,
          biovoldens = biovolume) %>% 
-  select(-c(Genus, indiv_vol))
+  select(-c(Genus, indiv_vol)) |> 
+  mutate(fun_grp = ifelse(label == "ChlGolrad_2641100","I", fun_grp))
 
 # taxon level data
 edat_tax <- erk.dat  |>  
@@ -102,6 +103,7 @@ edat_tax <- edat_tax %>%
   summarise(dens = sum(dens),
             biovoldens = sum(biovoldens)) %>%  # cubic micrometers
   ungroup()
+
 
 # functional group level data
 edat_fgroup = edat_tax |> 
